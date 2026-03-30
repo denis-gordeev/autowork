@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "repo-autowork"
+version = "0.1.0"
+description = "Local-first orchestration for managing multiple repositories with Codex, cron, and Telegram."
+requires-python = ">=3.9"
+readme = "README.md"
+authors = [{ name = "Denis" }]
+dependencies = []
+
+[project.scripts]
+repo-autowork = "repo_autowork.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
