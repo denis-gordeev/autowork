@@ -19,19 +19,12 @@ CRON_BLOCK_END = "# repo-autowork managed block end"
 PROJECT_AUTOWORK = """#!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${{BASH_SOURCE[0]}}")" && pwd)"
+REPO_DIR="$(cd "$(dirname "${{BASH_SOURCE[0]}}")" && pwd)"
 CONTROLLER_ROOT="{controller_root}"
 PYTHON_BIN="${{AUTOWORK_PYTHON_BIN:-{python_bin}}}"
 
-if [ -f "$CONTROLLER_ROOT/.env" ]; then
-  set -a
-  # shellcheck disable=SC1090
-  . "$CONTROLLER_ROOT/.env"
-  set +a
-fi
-
-cd "$ROOT_DIR"
-PYTHONPATH="$CONTROLLER_ROOT/src" "$PYTHON_BIN" -m repo_autowork.cli project-run --repo "$ROOT_DIR" "$@"
+cd "$CONTROLLER_ROOT"
+PYTHONPATH="$CONTROLLER_ROOT/src" "$PYTHON_BIN" -m repo_autowork.cli project-run --repo "$REPO_DIR" "$@"
 """
 
 
