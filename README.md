@@ -2,16 +2,21 @@
 
 Local-first orchestrator for a folder of git repositories.
 
-It is based on the `my-summer-startup` mechanics, but the domain model is different:
+The controller scans a real directory with existing repositories. Each repository gets its own `autowork.sh`, cron schedule, Telegram topic, and local `tg/<repo>/` mirror folder.
 
-1. There are no generated startups.
-2. The controller scans a real directory with existing repositories.
-3. Each repository gets its own `autowork.sh`, cron schedule, Telegram topic, and local `tg/<repo>/` mirror folder.
-4. Each automation round looks at:
-   - `AUTOWORK_INSTRUCTIONS.md` first
-   - then open issues and PRs/MRs
-   - then TODO items from `README.md` and `TODO.md`
-5. If the repository is a fork, the controller tries to merge upstream changes before dispatching work to the base command.
+Each automation round looks at:
+
+1. `AUTOWORK_INSTRUCTIONS.md` first
+2. then open issues and PRs/MRs
+3. then TODO items from `README.md` and `TODO.md`
+4. if the repository is a fork, the controller tries to merge upstream changes before dispatching work to the base command
+
+Each child repository is also expected to keep a living task list:
+
+- reuse `TODO.md` when it exists
+- otherwise reuse a TODO section in `README.md`
+- if neither exists, the agent should create `TODO.md`
+- after each round, the agent should update completed items and next actions
 
 ## Default Layout
 
@@ -81,6 +86,7 @@ One repository round builds a prompt in this order:
 Then it dispatches the prompt to `AUTOWORK_BASE_COMMAND`.
 
 If the repo is a fork and an upstream remote or forge parent can be resolved, the controller tries to merge upstream first.
+The prompt also tells the agent to create or refresh a persistent TODO for that repository on every round.
 
 ## Telegram Flow
 

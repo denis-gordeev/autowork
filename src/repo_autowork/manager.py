@@ -245,6 +245,9 @@ def project_prompt(project: ProjectRecord, repo_dir: Path, work_items: dict[str,
         "2. Open issues and open PRs/MRs.",
         "3. TODO items from README.md and TODO.md.",
         "Work directly in this repository.",
+        "Maintain a living task list for the repository.",
+        "If TODO.md does not exist and README.md has no TODO section, create TODO.md.",
+        "After each round, update TODO.md or the README TODO section with completed items and next actions.",
         "Run relevant checks after making changes.",
         "If the repository is ready for it, commit and push the result.",
         f"Current branch: {project.current_branch}",
@@ -271,7 +274,7 @@ def project_prompt(project: ProjectRecord, repo_dir: Path, work_items: dict[str,
         prompt_lines.extend(
             [
                 "",
-                "No explicit work queue was found. Inspect the repository, identify the highest-value next task, implement it, and update docs if needed.",
+                "No explicit work queue was found. Inspect the repository, identify the highest-value next task, implement it, create a TODO if needed, and update docs.",
             ]
         )
     return "\n".join(prompt_lines)
