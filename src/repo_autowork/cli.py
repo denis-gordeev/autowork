@@ -171,11 +171,18 @@ def cmd_telegram_sync(args: argparse.Namespace) -> int:
     state = load_state(config)
     sync_projects(config, state, dry_run=args.dry_run)
     offset = state.last_telegram_update_id + 1 if state.last_telegram_update_id else None
+    print(
+        f"Syncing Telegram updates for {len(state.projects)} managed repositories"
+        + (f" starting from offset {offset}" if offset is not None else " from the current head")
+        + "...",
+        flush=True,
+    )
     try:
         updates = get_updates(config, offset=offset, timeout=args.timeout)
     except TelegramError as exc:
         print(f"Telegram sync failed: {exc}", file=sys.stderr)
         return 1
+    print(f"Fetched {len(updates)} Telegram update(s).", flush=True)
     handled = 0
     for update in updates:
         state.last_telegram_update_id = max(state.last_telegram_update_id, int(update.get("update_id", 0)))
