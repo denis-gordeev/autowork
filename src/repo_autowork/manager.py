@@ -20,7 +20,8 @@ PROJECT_AUTOWORK = """#!/usr/bin/env bash
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${{BASH_SOURCE[0]}}")" && pwd)"
-CONTROLLER_ROOT="{controller_root}"
+PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${{PATH:-}}"
+CONTROLLER_ROOT="${{AUTOWORK_CONTROLLER_ROOT:-{controller_root}}}"
 PYTHON_BIN="${{AUTOWORK_PYTHON_BIN:-{python_bin}}}"
 
 cd "$CONTROLLER_ROOT"
@@ -61,6 +62,8 @@ def discover_repo_dirs(config: Config) -> list[Path]:
     if not config.repos_root.exists():
         return []
     discovered: list[Path] = []
+    if config.autowork_include_controller and (config.project_root / ".git").is_dir():
+        discovered.append(config.project_root.resolve())
     for child in sorted(config.repos_root.iterdir()):
         if not child.is_dir():
             continue
@@ -284,12 +287,17 @@ def run_base_command(config: Config, repo_dir: Path, prompt: str) -> subprocess.
     command = shlex.split(config.autowork_base_command)
     if not command:
         raise RuntimeError("AUTOWORK_BASE_COMMAND is empty.")
-    return subprocess.run(
-        [*command, prompt],
-        cwd=repo_dir,
-        text=True,
-        capture_output=True,
-    )
+    try:
+        return subprocess.run(
+            [*command, prompt],
+            cwd=repo_dir,
+            text=True,
+            capture_output=True,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            f"Failed to execute base command `{config.autowork_base_command}` from {repo_dir}: missing `{command[0]}`."
+        ) from exc
 
 
 def send_project_update(config: Config, project: ProjectRecord, text: str, dry_run: bool = False) -> None:
@@ -340,16 +348,27 @@ def cron_hours_for_runs(daily_runs_target: int) -> list[int]:
     return sorted(ordered)
 
 
+def cron_minute_for_project(project_index: int, total_projects: int) -> int:
+    if total_projects <= 1:
+        return 5
+    # Spread project runs across the hour while leaving minute 0 for controller jobs.
+    return max(1, min(59, round((project_index + 1) * 59 / total_projects)))
+
+
 def render_crontab(config: Config, state: State) -> str:
     lines = [CRON_BLOCK_START]
     controller_log = config.project_root / "autowork.log"
-    for hour in config.autowork_portfolio_hours:
-        lines.append(f"0 {hour} * * * cd {config.project_root} && ./autowork.sh >> {controller_log} 2>&1")
-    for project in state.projects:
+    controller_is_managed = any(Path(project.repo_path).resolve() == config.project_root.resolve() for project in state.projects)
+    if not controller_is_managed:
+        for hour in config.autowork_portfolio_hours:
+            lines.append(f"0 {hour} * * * cd {config.project_root} && ./autowork.sh >> {controller_log} 2>&1")
+    total_projects = len(state.projects)
+    for project_index, project in enumerate(state.projects):
         repo_dir = Path(project.repo_path)
         log_path = repo_dir / "autowork.log"
+        minute = cron_minute_for_project(project_index, total_projects)
         for hour in cron_hours_for_runs(project.daily_runs_target):
-            lines.append(f"0 {hour} * * * cd {repo_dir} && ./autowork.sh >> {log_path} 2>&1")
+            lines.append(f"{minute} {hour} * * * cd {repo_dir} && ./autowork.sh >> {log_path} 2>&1")
     lines.append(CRON_BLOCK_END)
     return "\n".join(lines)
 

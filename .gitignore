@@ -6,6 +6,8 @@ __pycache__/
 .autowork/
 data/
 tg/
+autowork.log
+.pytest_cache/
 dist/
 build/
 *.egg-info/

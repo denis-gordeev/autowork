@@ -37,6 +37,7 @@ AUTOWORK_TG_ROOT=/Users/denis/programming/autowork/repo-autowork/tg
 AUTOWORK_BASE_COMMAND=codex exec --yolo
 AUTOWORK_DEFAULT_DAILY_RUNS=2
 AUTOWORK_PORTFOLIO_HOURS=10,20
+AUTOWORK_INCLUDE_CONTROLLER=0
 AUTOWORK_PYTHON_BIN=python3
 GITHUB_OWNER=
 GITHUB_VISIBILITY=private
@@ -49,6 +50,7 @@ Notes:
 - `AUTOWORK_BASE_COMMAND` defaults to `codex exec --yolo`, but any compatible CLI command can be used.
 - `AUTOWORK_REPOS_ROOT` is the folder that contains the repositories to manage.
 - `AUTOWORK_TG_ROOT` is a local filesystem mirror for project Telegram threads.
+- `AUTOWORK_INCLUDE_CONTROLLER=1` opts the controller repo itself into the managed project set.
 - The Telegram bot should be an admin in a forum-enabled group if you want one topic per repository.
 
 ## Commands
@@ -61,7 +63,28 @@ PYTHONPATH=src python3 -m repo_autowork.cli sync-crontab
 PYTHONPATH=src python3 -m repo_autowork.cli project-run --repo /Users/denis/programming/autowork/mcp-russia --dry-run
 PYTHONPATH=src python3 -m repo_autowork.cli telegram-sync
 ./autowork.sh --dry-run
+pytest -q
 ```
+
+## Progress Tracker
+
+### Completed
+
+- Added `AUTOWORK_INCLUDE_CONTROLLER` so the controller repo can opt into self-management explicitly instead of relying on implicit discovery.
+- Switched generated per-repo wrappers to call `project-run --repo <repo>` from the controller root, which prevents child repositories from accidentally re-running the full portfolio loop.
+- Kept the controller root `./autowork.sh` on the original portfolio flow (`telegram-sync`, `run`, `review`) while child wrappers use `project-run`, so controller cron jobs and manual child runs both stay valid.
+- Normalized runtime execution by prepending common macOS shell paths and resolving `codex` through `PATH` plus known Homebrew locations.
+- Staggered managed project cron entries across the hour and skipped the extra controller-wide cron line when the controller is already a managed repository.
+- Added regression coverage for cron staggering, controller discovery, runtime bootstrap, and generated wrapper contents.
+- Added a regression check that protects the controller root wrapper from collapsing into child-only `project-run` behavior.
+- Added pytest bootstrap wiring so `pytest -q` works without a manual `PYTHONPATH=src` export.
+
+### Next Iterations
+
+- Keep cron minutes stable per repository even when discovery order changes, most likely by persisting the assigned minute in state.
+- Load `.autowork/project.env` automatically before dispatching `project-run` so wrapper metadata is available to downstream commands.
+- Extend tests beyond pure helpers into CLI-level flows for `run --dry-run` and `project-run --dry-run`.
+- Resolve whether controller-level `AUTOWORK_INSTRUCTIONS.md` is meant to be committed policy or ignored local guidance, and document that decision.
 
 ## What `run` Does
 
@@ -87,6 +110,11 @@ Then it dispatches the prompt to `AUTOWORK_BASE_COMMAND`.
 
 If the repo is a fork and an upstream remote or forge parent can be resolved, the controller tries to merge upstream first.
 The prompt also tells the agent to create or refresh a persistent TODO for that repository on every round.
+
+## Living Task List
+
+The controller repository now keeps its own persistent task list in [TODO.md](TODO.md).
+Update it alongside code changes so completed work and next iterations stay synchronized.
 
 ## Telegram Flow
 
