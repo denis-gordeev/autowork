@@ -78,13 +78,18 @@ pytest -q
 - Added regression coverage for cron staggering, controller discovery, runtime bootstrap, and generated wrapper contents.
 - Added a regression check that protects the controller root wrapper from collapsing into child-only `project-run` behavior.
 - Added pytest bootstrap wiring so `pytest -q` works without a manual `PYTHONPATH=src` export.
+- Persisted a per-project `cron_minute` in controller state so existing repositories keep their assigned minute even when discovery order or portfolio size changes.
+- `project-run` now loads `.autowork/project.env` automatically before dispatching the base command, so wrapper metadata is available to custom hooks and prompts.
+- Added regression coverage for persisted cron minutes and for the `project-run` CLI path that hydrates per-repository env before execution.
+- Restored the controller root `autowork.sh` contract so the controller repository still executes `telegram-sync -> run -> review` instead of collapsing into a child-style `project-run`.
 
 ### Next Iterations
 
-- Keep cron minutes stable per repository even when discovery order changes, most likely by persisting the assigned minute in state.
-- Load `.autowork/project.env` automatically before dispatching `project-run` so wrapper metadata is available to downstream commands.
 - Extend tests beyond pure helpers into CLI-level flows for `run --dry-run` and `project-run --dry-run`.
 - Resolve whether controller-level `AUTOWORK_INSTRUCTIONS.md` is meant to be committed policy or ignored local guidance, and document that decision.
+- Refresh persisted state and generated wrappers so older `state.json` entries and child repos pick up the new `cron_minute` + wrapper contract on the next real controller run.
+- Add collision-aware cron rebalancing for large portfolios so newly discovered projects prefer free minutes near the ideal slot without starving late additions.
+- Expose project metadata loading in Telegram-triggered runs as well, so inbound topic tasks and scheduled `project-run` executions share the same environment contract.
 
 ## What `run` Does
 

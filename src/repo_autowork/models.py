@@ -29,6 +29,7 @@ class ProjectRecord:
     telegram_topic_id: int | None = None
     last_telegram_report_hash: str | None = None
     daily_runs_target: int = 2
+    cron_minute: int | None = None
     tg_folder: str = ""
     notes: list[str] = field(default_factory=list)
     created_at: str = field(default_factory=utc_now_iso)

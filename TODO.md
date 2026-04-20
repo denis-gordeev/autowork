@@ -9,10 +9,15 @@
 - Regression tests cover cron staggering, optional controller discovery, generated wrapper contents, and runtime command resolution.
 - Regression tests also guard the controller root wrapper contract so future refactors do not break the portfolio entrypoint.
 - Pytest now works out of the box without requiring a manual `PYTHONPATH=src` prefix.
+- Project records now persist `cron_minute`, so existing repositories keep stable launch minutes when discovery order changes.
+- `project-run` now hydrates `.autowork/project.env` before dispatch, making wrapper metadata available to downstream commands and hooks.
+- CLI regressions now cover persisted cron minutes and the `project-run` env-loading path.
+- The controller root `autowork.sh` once again keeps the portfolio-wide `telegram-sync -> run -> review` flow instead of degrading into a child wrapper.
 
 ## Next
 
-- Persist a per-project cron minute in state so schedules stay stable when repository ordering changes.
-- Load `.autowork/project.env` before invoking `project-run` so per-repository wrapper metadata is available to custom commands and hooks.
 - Add CLI coverage for `project-run --dry-run` and for controller-included `run` flows to catch prompt/regression issues earlier.
 - Decide whether `AUTOWORK_INSTRUCTIONS.md` should be a tracked controller policy file or a generated local artifact, then codify that in docs and gitignore if the current tracked-policy direction changes.
+- Refresh `data/state.json` and generated child `autowork.sh` wrappers with a real controller run so live managed repos inherit the persisted cron minutes and current wrapper contract.
+- Make Telegram-triggered runs load `.autowork/project.env` through the same path as scheduled `project-run` dispatches.
+- Revisit cron allocation for larger portfolios: keep persisted minutes stable, but prefer nearby free slots for newly discovered repositories instead of drifting to arbitrary gaps.

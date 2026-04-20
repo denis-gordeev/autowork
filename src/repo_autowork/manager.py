@@ -113,6 +113,20 @@ def ensure_project_record(config: Config, state: State, repo_dir: Path) -> Proje
     return existing
 
 
+def assign_project_cron_minutes(projects: list[ProjectRecord]) -> None:
+    if not projects:
+        return
+    used_minutes = {project.cron_minute for project in projects if project.cron_minute is not None}
+    total_projects = len(projects)
+    for project_index, project in enumerate(projects):
+        if project.cron_minute is not None:
+            continue
+        ideal_minute = cron_minute_for_project(project_index, total_projects)
+        candidate_minutes = sorted(range(1, 60), key=lambda minute: (abs(minute - ideal_minute), minute))
+        project.cron_minute = next((minute for minute in candidate_minutes if minute not in used_minutes), ideal_minute)
+        used_minutes.add(project.cron_minute)
+
+
 def project_metadata_dir(project: ProjectRecord) -> Path:
     return Path(project.repo_path) / ".autowork"
 
@@ -210,6 +224,7 @@ def sync_projects(config: Config, state: State, dry_run: bool = False) -> list[P
         ensure_project_files(config, project)
         retained.append(project)
     state.projects = retained
+    assign_project_cron_minutes(state.projects)
     save_state(config, state)
     return retained
 
@@ -366,7 +381,7 @@ def render_crontab(config: Config, state: State) -> str:
     for project_index, project in enumerate(state.projects):
         repo_dir = Path(project.repo_path)
         log_path = repo_dir / "autowork.log"
-        minute = cron_minute_for_project(project_index, total_projects)
+        minute = project.cron_minute if project.cron_minute is not None else cron_minute_for_project(project_index, total_projects)
         for hour in cron_hours_for_runs(project.daily_runs_target):
             lines.append(f"{minute} {hour} * * * cd {repo_dir} && ./autowork.sh >> {log_path} 2>&1")
     lines.append(CRON_BLOCK_END)

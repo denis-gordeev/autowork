@@ -2,7 +2,7 @@ import unittest
 from pathlib import Path
 
 from repo_autowork.config import Config
-from repo_autowork.manager import cron_minute_for_project, render_crontab
+from repo_autowork.manager import assign_project_cron_minutes, cron_minute_for_project, render_crontab
 from repo_autowork.models import ProjectRecord, State
 
 
@@ -65,6 +65,19 @@ class CronRenderTests(unittest.TestCase):
 
         self.assertTrue(all(1 <= minute <= 59 for minute in minutes))
         self.assertEqual(minutes, sorted(minutes))
+
+    def test_existing_project_minutes_are_preserved_when_new_repo_is_added(self) -> None:
+        projects = [build_project("repo-1"), build_project("repo-2")]
+        assign_project_cron_minutes(projects)
+        original_minutes = {project.name: project.cron_minute for project in projects}
+
+        projects.append(build_project("repo-3"))
+        assign_project_cron_minutes(projects)
+
+        self.assertEqual(projects[0].cron_minute, original_minutes["repo-1"])
+        self.assertEqual(projects[1].cron_minute, original_minutes["repo-2"])
+        self.assertIsNotNone(projects[2].cron_minute)
+        self.assertEqual(len({project.cron_minute for project in projects}), 3)
 
     def test_controller_does_not_get_duplicate_schedule_when_managed(self) -> None:
         config = build_config()

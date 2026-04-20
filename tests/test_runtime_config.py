@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from repo_autowork.config import build_config, ensure_runtime_path, resolve_base_command
+from repo_autowork.config import build_config, ensure_runtime_path, load_env_file, resolve_base_command
 from repo_autowork.manager import discover_repo_dirs, ensure_project_files
 from repo_autowork.models import ProjectRecord
 
@@ -71,6 +71,22 @@ class RuntimeConfigTests(unittest.TestCase):
                     os.environ.pop("AUTOWORK_INCLUDE_CONTROLLER", None)
                 else:
                     os.environ["AUTOWORK_INCLUDE_CONTROLLER"] = original_include
+
+    def test_load_env_file_can_override_existing_values(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            env_path = Path(tmp_dir) / "project.env"
+            env_path.write_text("AUTOWORK_PROJECT_SLUG=fresh-value\n", encoding="utf-8")
+            original_slug = os.environ.get("AUTOWORK_PROJECT_SLUG")
+            try:
+                os.environ["AUTOWORK_PROJECT_SLUG"] = "stale-value"
+                load_env_file(env_path, override=True)
+
+                self.assertEqual(os.environ["AUTOWORK_PROJECT_SLUG"], "fresh-value")
+            finally:
+                if original_slug is None:
+                    os.environ.pop("AUTOWORK_PROJECT_SLUG", None)
+                else:
+                    os.environ["AUTOWORK_PROJECT_SLUG"] = original_slug
 
     def test_root_wrapper_keeps_portfolio_flow_for_controller_root(self) -> None:
         root_wrapper = (Path(__file__).resolve().parents[1] / "autowork.sh").read_text(encoding="utf-8")

@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .config import build_config
+from .config import build_config, load_env_file
 from .manager import (
     CRON_BLOCK_END,
     CRON_BLOCK_START,
@@ -126,6 +126,7 @@ def cmd_project_run(args: argparse.Namespace) -> int:
     if project is None:
         print(f"Repository is not managed: {args.repo}", file=sys.stderr)
         return 1
+    load_env_file(Path(project.repo_path) / ".autowork" / "project.env", override=True)
     result = project_run_once(config, project, dry_run=args.dry_run)
     save_state(config, state)
     if result.stdout:
