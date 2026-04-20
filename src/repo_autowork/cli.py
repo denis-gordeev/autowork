@@ -118,6 +118,10 @@ def _find_project(state, repo_path: Path):
     return None
 
 
+def _load_project_env(project) -> None:
+    load_env_file(Path(project.repo_path) / ".autowork" / "project.env", override=True)
+
+
 def cmd_project_run(args: argparse.Namespace) -> int:
     config = build_config(Path.cwd(), repos_root=args.repos_root)
     state = load_state(config)
@@ -126,7 +130,7 @@ def cmd_project_run(args: argparse.Namespace) -> int:
     if project is None:
         print(f"Repository is not managed: {args.repo}", file=sys.stderr)
         return 1
-    load_env_file(Path(project.repo_path) / ".autowork" / "project.env", override=True)
+    _load_project_env(project)
     result = project_run_once(config, project, dry_run=args.dry_run)
     save_state(config, state)
     if result.stdout:
@@ -204,6 +208,7 @@ def cmd_telegram_sync(args: argparse.Namespace) -> int:
         if project is None:
             continue
         inbox_path = write_telegram_mirror(project, update)
+        _load_project_env(project)
         result = _dispatch_telegram_message(config, project, text, dry_run=args.dry_run)
         handled += 1
         print(f"Dispatched Telegram update {update['update_id']} to {project.name}")
