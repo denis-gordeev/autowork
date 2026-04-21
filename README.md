@@ -85,14 +85,18 @@ pytest -q
 - Added CLI-level dry-run coverage for both `run` and `project-run`, so parser wiring and user-facing console output are exercised instead of only helper-level call sites.
 - Telegram-triggered repository dispatches now load `.autowork/project.env` before invoking the base command, so inbound topic tasks see the same per-project metadata as scheduled `project-run` executions.
 - Added regression coverage that guards Telegram-triggered env loading and the `main()` entrypoint flow for dry-run CLI commands.
+- Restored the tracked controller-root `autowork.sh` contract so the root wrapper again keeps the portfolio-wide `telegram-sync -> run -> review` flow instead of drifting into a child-only `project-run`.
+- `telegram-sync` now prints an ignored-update breakdown after each sync, making dry-run output easier to audit when updates are skipped for chat, thread, sender, or payload reasons.
+- Added CLI dry-run coverage for `telegram-sync`, including ignored updates, topic routing, env hydration for the routed project, and user-facing status output.
 
 ### Next Iterations
 
 - Resolve whether controller-level `AUTOWORK_INSTRUCTIONS.md` is meant to be committed policy or ignored local guidance, and document that decision.
 - Refresh persisted state and generated wrappers so older `state.json` entries and child repos pick up the new `cron_minute` + wrapper contract on the next real controller run.
 - Add collision-aware cron rebalancing for large portfolios so newly discovered projects prefer free minutes near the ideal slot without starving late additions.
-- Add CLI coverage for `telegram-sync --dry-run`, including ignored updates, topic matching, and status output, so inbound message handling has the same regression depth as scheduled runs.
 - Add an explicit helper contract around per-project env hydration so future entrypoints reuse one path and tests can verify the same metadata is visible across wrappers, scheduled runs, and Telegram dispatches.
+- Extend Telegram sync reporting beyond stdout: persist per-run handled/ignored counters in the review surface or journal so controller health is visible after unattended cron runs.
+- Add targeted coverage for `telegram-sync` failure paths, especially `get_updates` errors and failed downstream dispatches, so the status summary remains trustworthy under bot/API failures.
 
 ## What `run` Does
 

@@ -215,6 +215,125 @@ class CliFlowTests(unittest.TestCase):
                 else:
                     os.environ["TG_TOPIC_ID"] = original_topic
 
+    def test_main_telegram_sync_dry_run_reports_routing_and_ignored_updates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "controller"
+            repo_one = root.parent / "managed-repo"
+            repo_two = root.parent / "second-repo"
+            root.mkdir(parents=True)
+            repo_one.mkdir(parents=True)
+            repo_two.mkdir(parents=True)
+            for repo_dir, topic_id in ((repo_one, 42), (repo_two, 77)):
+                (repo_dir / ".autowork").mkdir(parents=True)
+                (repo_dir / ".autowork" / "project.env").write_text(
+                    f"AUTOWORK_PROJECT_SLUG={repo_dir.name}\nTG_TOPIC_ID={topic_id}\n",
+                    encoding="utf-8",
+                )
+
+            config = build_config(root, repos_root=str(root.parent))
+            project_one = ProjectRecord(
+                slug="managed-repo",
+                name="managed-repo",
+                repo_path=str(repo_one),
+                telegram_topic_id=42,
+                tg_folder=str(root / "tg" / "managed-repo"),
+            )
+            project_two = ProjectRecord(
+                slug="second-repo",
+                name="second-repo",
+                repo_path=str(repo_two),
+                telegram_topic_id=77,
+                tg_folder=str(root / "tg" / "second-repo"),
+            )
+            state = State(projects=[project_one, project_two], last_telegram_update_id=99)
+            updates = [
+                {"update_id": 100},
+                {
+                    "update_id": 101,
+                    "message": {
+                        "message_id": 1,
+                        "chat": {"id": "wrong-chat"},
+                        "from": {"is_bot": False},
+                        "message_thread_id": 42,
+                        "text": "Wrong chat",
+                    },
+                },
+                {
+                    "update_id": 102,
+                    "message": {
+                        "message_id": 2,
+                        "chat": {"id": config.telegram_chat_id},
+                        "from": {"is_bot": True},
+                        "message_thread_id": 42,
+                        "text": "Bot message",
+                    },
+                },
+                {
+                    "update_id": 103,
+                    "message": {
+                        "message_id": 3,
+                        "chat": {"id": config.telegram_chat_id},
+                        "from": {"is_bot": False},
+                        "text": "No thread",
+                    },
+                },
+                {
+                    "update_id": 104,
+                    "message": {
+                        "message_id": 4,
+                        "chat": {"id": config.telegram_chat_id},
+                        "from": {"is_bot": False},
+                        "message_thread_id": 999,
+                        "text": "Unknown topic",
+                    },
+                },
+                {
+                    "update_id": 105,
+                    "message": {
+                        "message_id": 5,
+                        "chat": {"id": config.telegram_chat_id},
+                        "from": {"is_bot": False},
+                        "message_thread_id": 77,
+                        "text": "Ship this",
+                    },
+                },
+            ]
+
+            stdout = io.StringIO()
+
+            def fake_dispatch(_, passed_project, text, dry_run=False):
+                self.assertTrue(dry_run)
+                self.assertEqual(passed_project.repo_path, str(repo_two))
+                self.assertEqual(text, "Ship this")
+                self.assertEqual(os.environ["AUTOWORK_PROJECT_SLUG"], "second-repo")
+                self.assertEqual(os.environ["TG_TOPIC_ID"], "77")
+                return cli.subprocess.CompletedProcess(args=[], returncode=0, stdout="ok", stderr="")
+
+            with patch("repo_autowork.cli.build_config", return_value=config), patch(
+                "repo_autowork.cli.load_state", return_value=state
+            ), patch("repo_autowork.cli.sync_projects"), patch(
+                "repo_autowork.cli.get_updates", return_value=updates
+            ), patch("repo_autowork.cli.write_telegram_mirror", return_value=repo_two / "inbox" / "telegram" / "update-105.json"), patch(
+                "repo_autowork.cli._dispatch_telegram_message", side_effect=fake_dispatch
+            ) as dispatch_mock, patch("repo_autowork.cli.save_state") as save_mock, patch(
+                "sys.argv", ["repo-autowork", "telegram-sync", "--repos-root", str(root.parent), "--dry-run"]
+            ), patch("sys.stdout", stdout):
+                exit_code = cli.main()
+
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(state.last_telegram_update_id, 105)
+            dispatch_mock.assert_called_once()
+            save_mock.assert_called_once()
+            rendered = stdout.getvalue()
+            self.assertIn("Syncing Telegram updates for 2 managed repositories starting from offset 100...", rendered)
+            self.assertIn("Fetched 6 Telegram update(s).", rendered)
+            self.assertIn("Dispatched Telegram update 105 to second-repo", rendered)
+            self.assertIn("Handled 1 Telegram update(s).", rendered)
+            self.assertIn(
+                "Ignored 5 Telegram update(s): bot_sender=1, missing_thread=1, non_message=1, other_chat=1, unknown_topic=1.",
+                rendered,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

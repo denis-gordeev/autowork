@@ -16,11 +16,15 @@
 - CLI dry-run coverage now exercises the `main()` entrypoint for both `run` and `project-run`, so parser wiring and console output are covered in addition to helper-level behavior.
 - Telegram-triggered dispatch now hydrates `.autowork/project.env` before invoking the base command, matching the scheduled `project-run` environment contract.
 - Regression coverage now guards Telegram-triggered env loading as well as the dry-run CLI entrypoint flow.
+- The tracked controller-root `autowork.sh` now once again preserves the portfolio-wide `telegram-sync -> run -> review` sequence instead of drifting into a child-only `project-run` wrapper.
+- `telegram-sync` now emits a handled/ignored summary with ignored-reason breakdowns, making dry-run output easier to audit during manual checks and CI coverage.
+- CLI regressions now cover `telegram-sync --dry-run`, including ignored updates, topic routing, env hydration for the selected project, and status output from the `main()` entrypoint.
 
 ## Next
 
 - Decide whether `AUTOWORK_INSTRUCTIONS.md` should be a tracked controller policy file or a generated local artifact, then codify that in docs and gitignore if the current tracked-policy direction changes.
 - Refresh `data/state.json` and generated child `autowork.sh` wrappers with a real controller run so live managed repos inherit the persisted cron minutes and current wrapper contract.
 - Revisit cron allocation for larger portfolios: keep persisted minutes stable, but prefer nearby free slots for newly discovered repositories instead of drifting to arbitrary gaps.
-- Add `telegram-sync --dry-run` CLI coverage for ignored updates, topic routing, and status output so message dispatch regressions surface before live bot runs.
 - Extract and document a single per-project env hydration contract that all entrypoints share, keeping wrappers, scheduled runs, and Telegram dispatches behaviorally aligned.
+- Persist Telegram sync handled/ignored counters somewhere reviewable, so unattended cron runs expose bot health without needing raw stdout logs.
+- Add explicit regression coverage for Telegram failure paths, especially `get_updates` API errors and downstream dispatch failures, so status reporting stays trustworthy when integrations misbehave.

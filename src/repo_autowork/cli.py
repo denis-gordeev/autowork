@@ -4,6 +4,7 @@ import argparse
 import shlex
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 
 from .config import build_config, load_env_file
@@ -171,6 +172,14 @@ def _dispatch_telegram_message(config, project, text: str, dry_run: bool = False
     )
 
 
+def _format_ignored_updates(ignored_updates: Counter[str]) -> str:
+    total = sum(ignored_updates.values())
+    if total == 0:
+        return "Ignored 0 Telegram update(s)."
+    breakdown = ", ".join(f"{reason}={ignored_updates[reason]}" for reason in sorted(ignored_updates))
+    return f"Ignored {total} Telegram update(s): {breakdown}."
+
+
 def cmd_telegram_sync(args: argparse.Namespace) -> int:
     config = build_config(Path.cwd(), repos_root=args.repos_root)
     state = load_state(config)
@@ -189,23 +198,30 @@ def cmd_telegram_sync(args: argparse.Namespace) -> int:
         return 1
     print(f"Fetched {len(updates)} Telegram update(s).", flush=True)
     handled = 0
+    ignored_updates: Counter[str] = Counter()
     for update in updates:
         state.last_telegram_update_id = max(state.last_telegram_update_id, int(update.get("update_id", 0)))
         message = update.get("message")
         if not isinstance(message, dict):
+            ignored_updates["non_message"] += 1
             continue
         if str(message.get("chat", {}).get("id")) != str(config.telegram_chat_id):
+            ignored_updates["other_chat"] += 1
             continue
         if message.get("from", {}).get("is_bot"):
+            ignored_updates["bot_sender"] += 1
             continue
         thread_id = message.get("message_thread_id")
         if thread_id is None:
+            ignored_updates["missing_thread"] += 1
             continue
         text = _message_text(message)
         if not text:
+            ignored_updates["empty_text"] += 1
             continue
         project = next((item for item in state.projects if item.telegram_topic_id == int(thread_id)), None)
         if project is None:
+            ignored_updates["unknown_topic"] += 1
             continue
         inbox_path = write_telegram_mirror(project, update)
         _load_project_env(project)
@@ -227,6 +243,7 @@ def cmd_telegram_sync(args: argparse.Namespace) -> int:
                 pass
     save_state(config, state)
     print(f"Handled {handled} Telegram update(s).")
+    print(_format_ignored_updates(ignored_updates))
     return 0
 
 
