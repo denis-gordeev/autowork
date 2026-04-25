@@ -56,6 +56,16 @@ def load_dotenv(project_root: Path) -> None:
     load_env_file(env_path, override=False)
 
 
+def project_runtime_env_path(repo_root: Path) -> Path:
+    return repo_root / ".autowork" / "project.env"
+
+
+def hydrate_project_runtime_env(repo_root: Path) -> Path:
+    env_path = project_runtime_env_path(repo_root)
+    load_env_file(env_path, override=True)
+    return env_path
+
+
 def _parse_int(value: str, default: int) -> int:
     try:
         parsed = int(value)

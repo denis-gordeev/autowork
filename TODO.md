@@ -19,12 +19,15 @@
 - The tracked controller-root `autowork.sh` now once again preserves the portfolio-wide `telegram-sync -> run -> review` sequence instead of drifting into a child-only `project-run` wrapper.
 - `telegram-sync` now emits a handled/ignored summary with ignored-reason breakdowns, making dry-run output easier to audit during manual checks and CI coverage.
 - CLI regressions now cover `telegram-sync --dry-run`, including ignored updates, topic routing, env hydration for the selected project, and status output from the `main()` entrypoint.
+- Shared helpers now define the `.autowork/project.env` path and hydration behavior in one place, so scheduled runs and Telegram-triggered dispatch use the same override-loading contract.
+- Regression coverage now checks the shared project-runtime env helper directly, and the tracked controller `autowork.sh` has been restored to the documented portfolio-wide flow.
 
 ## Next
 
 - Decide whether `AUTOWORK_INSTRUCTIONS.md` should be a tracked controller policy file or a generated local artifact, then codify that in docs and gitignore if the current tracked-policy direction changes.
 - Refresh `data/state.json` and generated child `autowork.sh` wrappers with a real controller run so live managed repos inherit the persisted cron minutes and current wrapper contract.
 - Revisit cron allocation for larger portfolios: keep persisted minutes stable, but prefer nearby free slots for newly discovered repositories instead of drifting to arbitrary gaps.
-- Extract and document a single per-project env hydration contract that all entrypoints share, keeping wrappers, scheduled runs, and Telegram dispatches behaviorally aligned.
 - Persist Telegram sync handled/ignored counters somewhere reviewable, so unattended cron runs expose bot health without needing raw stdout logs.
 - Add explicit regression coverage for Telegram failure paths, especially `get_updates` API errors and downstream dispatch failures, so status reporting stays trustworthy when integrations misbehave.
+- Add a controller-side audit check for wrapper drift, so the tracked root `autowork.sh` and generated child wrappers cannot silently diverge again.
+- Expose the shared project-runtime env keys in operator-facing docs or diagnostics, so downstream commands know which metadata is guaranteed at dispatch time.

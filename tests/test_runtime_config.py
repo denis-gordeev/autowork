@@ -3,7 +3,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from repo_autowork.config import build_config, ensure_runtime_path, load_env_file, resolve_base_command
+from repo_autowork.config import (
+    build_config,
+    ensure_runtime_path,
+    hydrate_project_runtime_env,
+    load_env_file,
+    project_runtime_env_path,
+    resolve_base_command,
+)
 from repo_autowork.manager import discover_repo_dirs, ensure_project_files
 from repo_autowork.models import ProjectRecord
 
@@ -87,6 +94,36 @@ class RuntimeConfigTests(unittest.TestCase):
                     os.environ.pop("AUTOWORK_PROJECT_SLUG", None)
                 else:
                     os.environ["AUTOWORK_PROJECT_SLUG"] = original_slug
+
+    def test_hydrate_project_runtime_env_uses_shared_project_env_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo_root = Path(tmp_dir)
+            env_path = project_runtime_env_path(repo_root)
+            env_path.parent.mkdir(parents=True, exist_ok=True)
+            env_path.write_text(
+                "AUTOWORK_PROJECT_SLUG=fresh-value\nTG_TOPIC_ID=42\n",
+                encoding="utf-8",
+            )
+            original_slug = os.environ.get("AUTOWORK_PROJECT_SLUG")
+            original_topic = os.environ.get("TG_TOPIC_ID")
+            try:
+                os.environ["AUTOWORK_PROJECT_SLUG"] = "stale-value"
+                os.environ["TG_TOPIC_ID"] = "stale-topic"
+
+                returned_path = hydrate_project_runtime_env(repo_root)
+
+                self.assertEqual(returned_path, env_path)
+                self.assertEqual(os.environ["AUTOWORK_PROJECT_SLUG"], "fresh-value")
+                self.assertEqual(os.environ["TG_TOPIC_ID"], "42")
+            finally:
+                if original_slug is None:
+                    os.environ.pop("AUTOWORK_PROJECT_SLUG", None)
+                else:
+                    os.environ["AUTOWORK_PROJECT_SLUG"] = original_slug
+                if original_topic is None:
+                    os.environ.pop("TG_TOPIC_ID", None)
+                else:
+                    os.environ["TG_TOPIC_ID"] = original_topic
 
     def test_root_wrapper_keeps_portfolio_flow_for_controller_root(self) -> None:
         root_wrapper = (Path(__file__).resolve().parents[1] / "autowork.sh").read_text(encoding="utf-8")

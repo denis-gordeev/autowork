@@ -7,7 +7,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-from .config import build_config, load_env_file
+from .config import build_config, hydrate_project_runtime_env
 from .manager import (
     CRON_BLOCK_END,
     CRON_BLOCK_START,
@@ -120,7 +120,7 @@ def _find_project(state, repo_path: Path):
 
 
 def _load_project_env(project) -> None:
-    load_env_file(Path(project.repo_path) / ".autowork" / "project.env", override=True)
+    hydrate_project_runtime_env(Path(project.repo_path))
 
 
 def cmd_project_run(args: argparse.Namespace) -> int:

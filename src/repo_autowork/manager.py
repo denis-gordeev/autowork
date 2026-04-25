@@ -6,7 +6,7 @@ import shlex
 import subprocess
 from pathlib import Path
 
-from .config import Config, read_json, write_json
+from .config import Config, project_runtime_env_path, read_json, write_json
 from .forge import detect_fork, list_open_work_items, merge_upstream, repo_snapshot
 from .models import ProjectRecord, State, content_hash, utc_now_iso
 from .telegram import TelegramError, create_topic, send_message
@@ -131,6 +131,20 @@ def project_metadata_dir(project: ProjectRecord) -> Path:
     return Path(project.repo_path) / ".autowork"
 
 
+def render_project_runtime_env(config: Config, project: ProjectRecord) -> str:
+    return (
+        "\n".join(
+            [
+                f"AUTOWORK_CONTROLLER_ROOT={config.project_root.resolve()}",
+                f"AUTOWORK_PROJECT_SLUG={project.slug}",
+                f"TG_TOPIC_ID={project.telegram_topic_id or ''}",
+                f"AUTOWORK_TG_DIR={project.tg_folder}",
+            ]
+        )
+        + "\n"
+    )
+
+
 def ensure_project_files(config: Config, project: ProjectRecord) -> None:
     repo_dir = Path(project.repo_path)
     repo_dir.mkdir(parents=True, exist_ok=True)
@@ -146,16 +160,8 @@ def ensure_project_files(config: Config, project: ProjectRecord) -> None:
 
     metadata_dir = project_metadata_dir(project)
     metadata_dir.mkdir(parents=True, exist_ok=True)
-    (metadata_dir / "project.env").write_text(
-        "\n".join(
-            [
-                f"AUTOWORK_CONTROLLER_ROOT={config.project_root.resolve()}",
-                f"AUTOWORK_PROJECT_SLUG={project.slug}",
-                f"TG_TOPIC_ID={project.telegram_topic_id or ''}",
-                f"AUTOWORK_TG_DIR={project.tg_folder}",
-            ]
-        )
-        + "\n",
+    project_runtime_env_path(Path(project.repo_path)).write_text(
+        render_project_runtime_env(config, project),
         encoding="utf-8",
     )
 
