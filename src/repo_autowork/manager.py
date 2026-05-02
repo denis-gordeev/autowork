@@ -15,6 +15,24 @@ from .telegram import TelegramError, create_topic, send_message
 CRON_BLOCK_START = "# repo-autowork managed block start"
 CRON_BLOCK_END = "# repo-autowork managed block end"
 
+ROOT_AUTOWORK = """#!/usr/bin/env bash
+set -euo pipefail
+
+REPO_DIR="$(cd "$(dirname "${{BASH_SOURCE[0]}}")" && pwd)"
+PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${{PATH:-}}"
+CONTROLLER_ROOT="${{AUTOWORK_CONTROLLER_ROOT:-{controller_root}}}"
+PYTHON_BIN="${{AUTOWORK_PYTHON_BIN:-{python_bin}}}"
+
+cd "$CONTROLLER_ROOT"
+if [ "$REPO_DIR" = "$CONTROLLER_ROOT" ]; then
+  PYTHONPATH="$CONTROLLER_ROOT/src" "$PYTHON_BIN" -m repo_autowork.cli telegram-sync "$@"
+  PYTHONPATH="$CONTROLLER_ROOT/src" "$PYTHON_BIN" -m repo_autowork.cli run "$@"
+  PYTHONPATH="$CONTROLLER_ROOT/src" "$PYTHON_BIN" -m repo_autowork.cli review "$@"
+else
+  PYTHONPATH="$CONTROLLER_ROOT/src" "$PYTHON_BIN" -m repo_autowork.cli project-run --repo "$REPO_DIR" "$@"
+fi
+"""
+
 
 PROJECT_AUTOWORK = """#!/usr/bin/env bash
 set -euo pipefail
@@ -27,6 +45,20 @@ PYTHON_BIN="${{AUTOWORK_PYTHON_BIN:-{python_bin}}}"
 cd "$CONTROLLER_ROOT"
 PYTHONPATH="$CONTROLLER_ROOT/src" "$PYTHON_BIN" -m repo_autowork.cli project-run --repo "$REPO_DIR" "$@"
 """
+
+
+def render_root_autowork(config: Config) -> str:
+    return ROOT_AUTOWORK.format(
+        controller_root=str(config.project_root.resolve()),
+        python_bin=config.autowork_python_bin,
+    )
+
+
+def render_project_autowork(config: Config) -> str:
+    return PROJECT_AUTOWORK.format(
+        controller_root=str(config.project_root.resolve()),
+        python_bin=config.autowork_python_bin,
+    )
 
 
 def slugify(value: str) -> str:
@@ -149,13 +181,7 @@ def ensure_project_files(config: Config, project: ProjectRecord) -> None:
     repo_dir = Path(project.repo_path)
     repo_dir.mkdir(parents=True, exist_ok=True)
     autowork_path = repo_dir / "autowork.sh"
-    autowork_path.write_text(
-        PROJECT_AUTOWORK.format(
-            controller_root=str(config.project_root.resolve()),
-            python_bin=config.autowork_python_bin,
-        ),
-        encoding="utf-8",
-    )
+    autowork_path.write_text(render_project_autowork(config), encoding="utf-8")
     autowork_path.chmod(0o755)
 
     metadata_dir = project_metadata_dir(project)

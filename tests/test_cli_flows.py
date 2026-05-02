@@ -334,6 +334,58 @@ class CliFlowTests(unittest.TestCase):
                 rendered,
             )
 
+    def test_main_doctor_reports_wrapper_drift_and_exits_nonzero(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            controller_root = Path(tmp_dir) / "controller"
+            repos_root = Path(tmp_dir) / "managed"
+            controller_root.mkdir(parents=True)
+            repos_root.mkdir(parents=True)
+            repo_dir = repos_root / "alpha"
+            repo_dir.mkdir(parents=True)
+            (repo_dir / ".git").mkdir()
+            (controller_root / "autowork.sh").write_text("# drifted\n", encoding="utf-8")
+            (repo_dir / "autowork.sh").write_text("# drifted child\n", encoding="utf-8")
+
+            config = build_config(controller_root, repos_root=str(repos_root))
+            stdout = io.StringIO()
+
+            with patch("repo_autowork.cli.build_config", return_value=config), patch(
+                "sys.argv", ["repo-autowork", "doctor", "--repos-root", str(repos_root)]
+            ), patch("sys.stdout", stdout):
+                exit_code = cli.main()
+
+            self.assertEqual(exit_code, 1)
+            rendered = stdout.getvalue()
+            self.assertIn("MISSING: Controller wrapper contract", rendered)
+            self.assertIn("MISSING: Managed wrapper contracts", rendered)
+            self.assertIn(str(controller_root / "autowork.sh"), rendered)
+            self.assertIn(str(repo_dir / "autowork.sh"), rendered)
+
+    def test_main_doctor_succeeds_when_wrappers_match_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            controller_root = Path(tmp_dir) / "controller"
+            repos_root = Path(tmp_dir) / "managed"
+            controller_root.mkdir(parents=True)
+            repos_root.mkdir(parents=True)
+            repo_dir = repos_root / "alpha"
+            repo_dir.mkdir(parents=True)
+            (repo_dir / ".git").mkdir()
+
+            config = build_config(controller_root, repos_root=str(repos_root))
+            (controller_root / "autowork.sh").write_text(cli.render_root_autowork(config), encoding="utf-8")
+            (repo_dir / "autowork.sh").write_text(cli.render_project_autowork(config), encoding="utf-8")
+            stdout = io.StringIO()
+
+            with patch("repo_autowork.cli.build_config", return_value=config), patch(
+                "sys.argv", ["repo-autowork", "doctor", "--repos-root", str(repos_root)]
+            ), patch("sys.stdout", stdout):
+                exit_code = cli.main()
+
+            self.assertEqual(exit_code, 0)
+            rendered = stdout.getvalue()
+            self.assertIn("OK: Controller wrapper contract", rendered)
+            self.assertIn("OK: Managed wrapper contracts", rendered)
+
 
 if __name__ == "__main__":
     unittest.main()

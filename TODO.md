@@ -21,6 +21,8 @@
 - CLI regressions now cover `telegram-sync --dry-run`, including ignored updates, topic routing, env hydration for the selected project, and status output from the `main()` entrypoint.
 - Shared helpers now define the `.autowork/project.env` path and hydration behavior in one place, so scheduled runs and Telegram-triggered dispatch use the same override-loading contract.
 - Regression coverage now checks the shared project-runtime env helper directly, and the tracked controller `autowork.sh` has been restored to the documented portfolio-wide flow.
+- `doctor` now audits wrapper drift for both the tracked controller-root `autowork.sh` and discovered child wrappers, and returns a failing exit code when the generated contract no longer matches live files.
+- The live controller-root `autowork.sh` has been restored to the documented `telegram-sync -> run -> review` portfolio flow, so the repository no longer silently ships a child-only wrapper regression.
 
 ## Next
 
@@ -29,5 +31,6 @@
 - Revisit cron allocation for larger portfolios: keep persisted minutes stable, but prefer nearby free slots for newly discovered repositories instead of drifting to arbitrary gaps.
 - Persist Telegram sync handled/ignored counters somewhere reviewable, so unattended cron runs expose bot health without needing raw stdout logs.
 - Add explicit regression coverage for Telegram failure paths, especially `get_updates` API errors and downstream dispatch failures, so status reporting stays trustworthy when integrations misbehave.
-- Add a controller-side audit check for wrapper drift, so the tracked root `autowork.sh` and generated child wrappers cannot silently diverge again.
 - Expose the shared project-runtime env keys in operator-facing docs or diagnostics, so downstream commands know which metadata is guaranteed at dispatch time.
+- Surface wrapper-drift results in `review` output or a persisted journal, so operators can see contract health after cron runs without manually invoking `doctor`.
+- Decide whether the controller root wrapper should remain git-tracked-only or whether `run` should be allowed to regenerate it as part of self-healing drift remediation.

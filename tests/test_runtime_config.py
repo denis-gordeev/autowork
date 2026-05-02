@@ -11,7 +11,12 @@ from repo_autowork.config import (
     project_runtime_env_path,
     resolve_base_command,
 )
-from repo_autowork.manager import discover_repo_dirs, ensure_project_files
+from repo_autowork.manager import (
+    discover_repo_dirs,
+    ensure_project_files,
+    render_project_autowork,
+    render_root_autowork,
+)
 from repo_autowork.models import ProjectRecord
 
 
@@ -126,13 +131,26 @@ class RuntimeConfigTests(unittest.TestCase):
                     os.environ["TG_TOPIC_ID"] = original_topic
 
     def test_root_wrapper_keeps_portfolio_flow_for_controller_root(self) -> None:
-        root_wrapper = (Path(__file__).resolve().parents[1] / "autowork.sh").read_text(encoding="utf-8")
+        repo_root = Path(__file__).resolve().parents[1]
+        config = build_config(repo_root)
+        root_wrapper = (repo_root / "autowork.sh").read_text(encoding="utf-8")
 
+        self.assertEqual(root_wrapper, render_root_autowork(config))
         self.assertIn('if [ "$REPO_DIR" = "$CONTROLLER_ROOT" ]; then', root_wrapper)
         self.assertIn('telegram-sync "$@"', root_wrapper)
         self.assertIn('run "$@"', root_wrapper)
         self.assertIn('review "$@"', root_wrapper)
         self.assertIn('project-run --repo "$REPO_DIR" "$@"', root_wrapper)
+
+    def test_rendered_project_wrapper_is_stable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            config = build_config(root)
+
+            wrapper = render_project_autowork(config)
+
+            self.assertIn('repo_autowork.cli project-run --repo "$REPO_DIR" "$@"', wrapper)
+            self.assertNotIn('telegram-sync "$@"', wrapper)
 
 
 if __name__ == "__main__":

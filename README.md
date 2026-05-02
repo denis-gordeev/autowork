@@ -90,6 +90,8 @@ pytest -q
 - Added CLI dry-run coverage for `telegram-sync`, including ignored updates, topic routing, env hydration for the routed project, and user-facing status output.
 - Extracted a shared project-runtime env helper so `.autowork/project.env` path resolution and override-loading are defined in one place for wrappers, scheduled `project-run`, and Telegram-triggered dispatches.
 - Added regression coverage for the shared project-runtime env helper and restored the tracked controller-root `autowork.sh` so the checked-in wrapper matches the documented portfolio contract again.
+- Added a `doctor`-level wrapper drift audit that compares the tracked controller `autowork.sh` and discovered child wrappers against the generated contracts, and now exits non-zero when either side drifts.
+- Restored the live controller-root `autowork.sh` to the documented portfolio-wide `telegram-sync -> run -> review` flow so the new audit passes on the checked-in repository state.
 
 ### Next Iterations
 
@@ -98,8 +100,9 @@ pytest -q
 - Add collision-aware cron rebalancing for large portfolios so newly discovered projects prefer free minutes near the ideal slot without starving late additions.
 - Extend Telegram sync reporting beyond stdout: persist per-run handled/ignored counters in the review surface or journal so controller health is visible after unattended cron runs.
 - Add targeted coverage for `telegram-sync` failure paths, especially `get_updates` errors and failed downstream dispatches, so the status summary remains trustworthy under bot/API failures.
-- Add a lightweight `doctor` or audit check that detects drift between the tracked controller `autowork.sh` and the generated child-wrapper contract before cron or manual runs hide it.
 - Surface the shared project-runtime env contract in operator-facing docs or dry-run output so downstream tools can see exactly which metadata keys are guaranteed.
+- Expose wrapper drift details in `review` or a persisted journal entry, so unattended runs can show wrapper health without requiring a manual `doctor` invocation.
+- Decide whether `run` should optionally self-heal the controller-root wrapper in addition to child wrappers, or keep the root wrapper strictly tracked-by-git and only audited.
 
 ## What `run` Does
 
