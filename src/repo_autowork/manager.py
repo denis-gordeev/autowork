@@ -242,6 +242,40 @@ def ensure_project_topic(config: Config, project: ProjectRecord, dry_run: bool =
         project.notes.append(f"Telegram setup failed: {exc}")
 
 
+def wrapper_contract_status(config: Config) -> dict[str, object]:
+    root_wrapper_path = config.project_root / "autowork.sh"
+    root_wrapper_expected = render_root_autowork(config)
+    root_wrapper_ok = root_wrapper_path.exists() and root_wrapper_path.read_text(encoding="utf-8") == root_wrapper_expected
+
+    expected_project_wrapper = render_project_autowork(config)
+    discovered_repos = [repo_dir for repo_dir in discover_repo_dirs(config) if repo_dir.resolve() != config.project_root.resolve()]
+    drifted_project_wrappers: list[str] = []
+    for repo_dir in discovered_repos:
+        wrapper_path = repo_dir / "autowork.sh"
+        if not wrapper_path.exists():
+            drifted_project_wrappers.append(str(wrapper_path))
+            continue
+        if wrapper_path.read_text(encoding="utf-8") != expected_project_wrapper:
+            drifted_project_wrappers.append(str(wrapper_path))
+
+    if drifted_project_wrappers:
+        preview = ", ".join(drifted_project_wrappers[:3])
+        if len(drifted_project_wrappers) > 3:
+            preview += f", +{len(drifted_project_wrappers) - 3} more"
+        managed_detail = preview
+    else:
+        managed_detail = f"{len(discovered_repos)} managed wrapper(s) match the generated contract"
+
+    return {
+        "root_ok": root_wrapper_ok,
+        "root_path": str(root_wrapper_path),
+        "managed_ok": not drifted_project_wrappers,
+        "managed_detail": managed_detail,
+        "drifted_project_wrappers": drifted_project_wrappers,
+        "managed_repo_count": len(discovered_repos),
+    }
+
+
 def sync_projects(config: Config, state: State, dry_run: bool = False) -> list[ProjectRecord]:
     active_paths = {str(path.resolve()) for path in discover_repo_dirs(config)}
     retained: list[ProjectRecord] = []
@@ -363,11 +397,20 @@ def send_project_update(config: Config, project: ProjectRecord, text: str, dry_r
 
 
 def review_summary(config: Config, state: State) -> str:
+    wrapper_status = wrapper_contract_status(config)
     lines = [
         f"Controller repo: {config.project_root}",
         f"Managed repos root: {config.repos_root}",
         f"Telegram mirror root: {config.tg_root}",
         f"Managed repositories: {len(state.projects)}",
+        (
+            "Wrapper contracts: "
+            f"controller={'ok' if wrapper_status['root_ok'] else 'drifted'}"
+            f" ({wrapper_status['root_path']})"
+            ", "
+            f"managed={'ok' if wrapper_status['managed_ok'] else 'drifted'}"
+            f" ({wrapper_status['managed_detail']})"
+        ),
     ]
     for project in state.projects:
         lines.append(

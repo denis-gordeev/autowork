@@ -2,6 +2,7 @@
 
 ## Done
 
+- `review` now reports wrapper-contract health for both the tracked controller `autowork.sh` and discovered child wrappers, so unattended cron summaries expose wrapper drift without a separate `doctor` pass.
 - Per-repo `autowork.sh` now routes into controller-side `project-run` instead of invoking the full portfolio loop from inside child repositories.
 - The controller root `autowork.sh` keeps the portfolio-wide `telegram-sync -> run -> review` flow, so controller cron jobs still work while child wrappers stay repo-scoped.
 - Runtime bootstrap now normalizes `PATH`, resolves the `codex` binary more defensively, and exposes `AUTOWORK_INCLUDE_CONTROLLER` so the controller repo can manage itself explicitly.
@@ -32,5 +33,6 @@
 - Persist Telegram sync handled/ignored counters somewhere reviewable, so unattended cron runs expose bot health without needing raw stdout logs.
 - Add explicit regression coverage for Telegram failure paths, especially `get_updates` API errors and downstream dispatch failures, so status reporting stays trustworthy when integrations misbehave.
 - Expose the shared project-runtime env keys in operator-facing docs or diagnostics, so downstream commands know which metadata is guaranteed at dispatch time.
-- Surface wrapper-drift results in `review` output or a persisted journal, so operators can see contract health after cron runs without manually invoking `doctor`.
+- Add a machine-readable `review` artifact or flag, so wrapper drift and future health checks can feed dashboards without parsing text output.
 - Decide whether the controller root wrapper should remain git-tracked-only or whether `run` should be allowed to regenerate it as part of self-healing drift remediation.
+- Add remediation hints for wrapper drift in `review`, so operators see the expected repair action instead of only the drifted paths.

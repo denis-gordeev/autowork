@@ -70,6 +70,7 @@ pytest -q
 
 ### Completed
 
+- Surfaced wrapper-contract health directly in `review`, so unattended portfolio summaries now show whether the tracked controller wrapper or any managed child wrapper drifted from the generated contract without requiring a separate `doctor` run.
 - Added `AUTOWORK_INCLUDE_CONTROLLER` so the controller repo can opt into self-management explicitly instead of relying on implicit discovery.
 - Switched generated per-repo wrappers to call `project-run --repo <repo>` from the controller root, which prevents child repositories from accidentally re-running the full portfolio loop.
 - Kept the controller root `./autowork.sh` on the original portfolio flow (`telegram-sync`, `run`, `review`) while child wrappers use `project-run`, so controller cron jobs and manual child runs both stay valid.
@@ -101,8 +102,9 @@ pytest -q
 - Extend Telegram sync reporting beyond stdout: persist per-run handled/ignored counters in the review surface or journal so controller health is visible after unattended cron runs.
 - Add targeted coverage for `telegram-sync` failure paths, especially `get_updates` errors and failed downstream dispatches, so the status summary remains trustworthy under bot/API failures.
 - Surface the shared project-runtime env contract in operator-facing docs or dry-run output so downstream tools can see exactly which metadata keys are guaranteed.
-- Expose wrapper drift details in `review` or a persisted journal entry, so unattended runs can show wrapper health without requiring a manual `doctor` invocation.
+- Add a machine-readable `review` mode or persisted review artifact, so wrapper drift and future health checks can be consumed by cron dashboards without parsing plain text.
 - Decide whether `run` should optionally self-heal the controller-root wrapper in addition to child wrappers, or keep the root wrapper strictly tracked-by-git and only audited.
+- Add wrapper-remediation guidance to `review` when drift is detected, so operators see the next safe command instead of only the failing file path.
 
 ## What `run` Does
 

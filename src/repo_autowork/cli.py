@@ -19,6 +19,7 @@ from .manager import (
     render_root_autowork,
     render_crontab,
     review_summary,
+    wrapper_contract_status,
     save_state,
     sync_projects,
     write_telegram_mirror,
@@ -69,28 +70,7 @@ def safe_sync_crontab(config, state) -> None:
 
 
 def doctor_checks(config) -> list[tuple[str, bool, str]]:
-    root_wrapper_path = config.project_root / "autowork.sh"
-    root_wrapper_expected = render_root_autowork(config)
-    root_wrapper_ok = root_wrapper_path.exists() and root_wrapper_path.read_text(encoding="utf-8") == root_wrapper_expected
-
-    expected_project_wrapper = render_project_autowork(config)
-    discovered_repos = [repo_dir for repo_dir in discover_repo_dirs(config) if repo_dir.resolve() != config.project_root.resolve()]
-    drifted_project_wrappers: list[str] = []
-    for repo_dir in discovered_repos:
-        wrapper_path = repo_dir / "autowork.sh"
-        if not wrapper_path.exists():
-            drifted_project_wrappers.append(str(wrapper_path))
-            continue
-        if wrapper_path.read_text(encoding="utf-8") != expected_project_wrapper:
-            drifted_project_wrappers.append(str(wrapper_path))
-
-    if drifted_project_wrappers:
-        preview = ", ".join(drifted_project_wrappers[:3])
-        if len(drifted_project_wrappers) > 3:
-            preview += f", +{len(drifted_project_wrappers) - 3} more"
-        wrapper_detail = preview
-    else:
-        wrapper_detail = f"{len(discovered_repos)} managed wrapper(s) match the generated contract"
+    wrapper_status = wrapper_contract_status(config)
 
     return [
         ("Managed repos root", config.repos_root.exists(), str(config.repos_root)),
@@ -98,8 +78,8 @@ def doctor_checks(config) -> list[tuple[str, bool, str]]:
         ("Telegram chat id", bool(config.telegram_chat_id), config.telegram_chat_id or "missing"),
         ("Base command", bool(config.autowork_base_command), config.autowork_base_command),
         ("GitHub owner", bool(config.github_owner), config.github_owner or "missing"),
-        ("Controller wrapper contract", root_wrapper_ok, str(root_wrapper_path)),
-        ("Managed wrapper contracts", not drifted_project_wrappers, wrapper_detail),
+        ("Controller wrapper contract", bool(wrapper_status["root_ok"]), str(wrapper_status["root_path"])),
+        ("Managed wrapper contracts", bool(wrapper_status["managed_ok"]), str(wrapper_status["managed_detail"])),
     ]
 
 
