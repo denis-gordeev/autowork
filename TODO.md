@@ -24,10 +24,11 @@
 - Regression coverage now checks the shared project-runtime env helper directly, and the tracked controller `autowork.sh` has been restored to the documented portfolio-wide flow.
 - `doctor` now audits wrapper drift for both the tracked controller-root `autowork.sh` and discovered child wrappers, and returns a failing exit code when the generated contract no longer matches live files.
 - The live controller-root `autowork.sh` has been restored to the documented `telegram-sync -> run -> review` portfolio flow, so the repository no longer silently ships a child-only wrapper regression.
+- `AUTOWORK_INSTRUCTIONS.md` is now documented as a tracked policy file committed to the repository (not generated, not gitignored), resolving the open decision about its lifecycle.
+- `review` and `doctor` now emit remediation hints when wrapper drift is detected, so operators see the next safe command instead of only the drifted paths.
 
 ## Next
 
-- Decide whether `AUTOWORK_INSTRUCTIONS.md` should be a tracked controller policy file or a generated local artifact, then codify that in docs and gitignore if the current tracked-policy direction changes.
 - Refresh `data/state.json` and generated child `autowork.sh` wrappers with a real controller run so live managed repos inherit the persisted cron minutes and current wrapper contract.
 - Revisit cron allocation for larger portfolios: keep persisted minutes stable, but prefer nearby free slots for newly discovered repositories instead of drifting to arbitrary gaps.
 - Persist Telegram sync handled/ignored counters somewhere reviewable, so unattended cron runs expose bot health without needing raw stdout logs.
@@ -35,4 +36,3 @@
 - Expose the shared project-runtime env keys in operator-facing docs or diagnostics, so downstream commands know which metadata is guaranteed at dispatch time.
 - Add a machine-readable `review` artifact or flag, so wrapper drift and future health checks can feed dashboards without parsing text output.
 - Decide whether the controller root wrapper should remain git-tracked-only or whether `run` should be allowed to regenerate it as part of self-healing drift remediation.
-- Add remediation hints for wrapper drift in `review`, so operators see the expected repair action instead of only the drifted paths.

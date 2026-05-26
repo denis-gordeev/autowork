@@ -48,6 +48,14 @@ class RuntimeConfigTests(unittest.TestCase):
             else:
                 os.environ["PATH"] = original_path
 
+    def test_resolve_base_command_preserves_shell_variables(self) -> None:
+        resolved = resolve_base_command('opencode run -m "$MODEL" --dangerously-skip-permissions -- "$PROMPT"')
+
+        self.assertEqual(
+            resolved,
+            'opencode run -m "$MODEL" --dangerously-skip-permissions -- "$PROMPT"',
+        )
+
     def test_generated_project_wrapper_sets_runtime_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)

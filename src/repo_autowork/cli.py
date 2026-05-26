@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import shlex
 import subprocess
 import sys
@@ -176,6 +177,18 @@ def _dispatch_telegram_message(config, project, text: str, dry_run: bool = False
     )
     if dry_run:
         return subprocess.CompletedProcess(args=[], returncode=0, stdout=prompt, stderr="")
+    if "$PROMPT" in config.autowork_base_command:
+        env = dict(os.environ)
+        env["PROMPT"] = prompt
+        return subprocess.run(
+            config.autowork_base_command,
+            cwd=project.repo_path,
+            text=True,
+            capture_output=True,
+            shell=True,
+            executable="/bin/zsh",
+            env=env,
+        )
     return subprocess.run(
         [*shlex.split(config.autowork_base_command), prompt],
         cwd=project.repo_path,
@@ -262,8 +275,13 @@ def cmd_telegram_sync(args: argparse.Namespace) -> int:
 def cmd_doctor(args: argparse.Namespace) -> int:
     config = build_config(Path.cwd(), repos_root=args.repos_root)
     checks = doctor_checks(config)
-    summary = "\n".join(f"{'OK' if ok else 'MISSING'}: {label} ({detail})" for label, ok, detail in checks)
-    print(summary)
+    summary_lines = [f"{'OK' if ok else 'MISSING'}: {label} ({detail})" for label, ok, detail in checks]
+    wrapper_status = wrapper_contract_status(config)
+    if not wrapper_status["root_ok"]:
+        summary_lines.append(f"  Remediation: run `PYTHONPATH=src python3 -m repo_autowork.cli run` to regenerate the controller wrapper, or restore {wrapper_status['root_path']} from git.")
+    if not wrapper_status["managed_ok"]:
+        summary_lines.append("  Remediation: run `PYTHONPATH=src python3 -m repo_autowork.cli run` to regenerate drifted managed wrappers.")
+    print("\n".join(summary_lines))
     blocking_labels = {
         "Managed repos root",
         "Controller wrapper contract",

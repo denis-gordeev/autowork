@@ -105,6 +105,8 @@ def ensure_runtime_path() -> str:
 
 
 def resolve_base_command(raw: str) -> str:
+    if "$" in raw:
+        return raw
     parts = shlex.split(raw)
     if not parts:
         return raw

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shlex
 import subprocess
@@ -365,6 +366,23 @@ def project_prompt(project: ProjectRecord, repo_dir: Path, work_items: dict[str,
 
 
 def run_base_command(config: Config, repo_dir: Path, prompt: str) -> subprocess.CompletedProcess:
+    if "$PROMPT" in config.autowork_base_command:
+        env = dict(os.environ)
+        env["PROMPT"] = prompt
+        try:
+            return subprocess.run(
+                config.autowork_base_command,
+                cwd=repo_dir,
+                text=True,
+                capture_output=True,
+                shell=True,
+                executable="/bin/zsh",
+                env=env,
+            )
+        except FileNotFoundError as exc:
+            raise RuntimeError(
+                f"Failed to execute base command `{config.autowork_base_command}` from {repo_dir}: missing `/bin/zsh`."
+            ) from exc
     command = shlex.split(config.autowork_base_command)
     if not command:
         raise RuntimeError("AUTOWORK_BASE_COMMAND is empty.")
@@ -412,6 +430,10 @@ def review_summary(config: Config, state: State) -> str:
             f" ({wrapper_status['managed_detail']})"
         ),
     ]
+    if not wrapper_status["root_ok"]:
+        lines.append(f"  Remediation: run `PYTHONPATH=src python3 -m repo_autowork.cli run` to regenerate the controller wrapper, or restore {wrapper_status['root_path']} from git.")
+    if not wrapper_status["managed_ok"]:
+        lines.append("  Remediation: run `PYTHONPATH=src python3 -m repo_autowork.cli run` to regenerate drifted managed wrappers.")
     for project in state.projects:
         lines.append(
             f"- {project.name} | branch={project.current_branch} | runs/day={project.daily_runs_target} | fork={'yes' if project.is_fork else 'no'} | topic={project.telegram_topic_id or 'pending'}"

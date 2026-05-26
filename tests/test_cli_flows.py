@@ -145,6 +145,44 @@ class CliFlowTests(unittest.TestCase):
             save_mock.assert_called_once()
             self.assertIn("prompt body", stdout.getvalue())
 
+    def test_dispatch_telegram_message_supports_shell_prompt_template(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "controller"
+            repo_dir = root.parent / "managed-repo"
+            root.mkdir(parents=True)
+            repo_dir.mkdir(parents=True)
+
+            original_base = os.environ.get("AUTOWORK_BASE_COMMAND")
+            original_model = os.environ.get("MODEL")
+            try:
+                os.environ["AUTOWORK_BASE_COMMAND"] = 'python3 -c "import os,sys;print(os.environ[\'MODEL\']);print(sys.argv[1])" "$PROMPT"'
+                os.environ["MODEL"] = "fhgenie/glm-5.1"
+                config = build_config(root, repos_root=str(root.parent))
+                project = ProjectRecord(
+                    slug="managed-repo",
+                    name="managed-repo",
+                    repo_path=str(repo_dir),
+                    telegram_topic_id=42,
+                    tg_folder=str(root / "tg" / "managed-repo"),
+                )
+
+                result = cli._dispatch_telegram_message(config, project, "Handle this task")
+
+                self.assertEqual(result.returncode, 0)
+                rendered = result.stdout.strip().splitlines()
+                self.assertEqual(rendered[0], "fhgenie/glm-5.1")
+                self.assertIn("Incoming Telegram message for `managed-repo`.", rendered)
+                self.assertEqual(rendered[-1], "Handle this task")
+            finally:
+                if original_base is None:
+                    os.environ.pop("AUTOWORK_BASE_COMMAND", None)
+                else:
+                    os.environ["AUTOWORK_BASE_COMMAND"] = original_base
+                if original_model is None:
+                    os.environ.pop("MODEL", None)
+                else:
+                    os.environ["MODEL"] = original_model
+
     def test_telegram_sync_loads_project_env_before_dispatch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir) / "controller"
@@ -360,6 +398,7 @@ class CliFlowTests(unittest.TestCase):
             self.assertIn("MISSING: Managed wrapper contracts", rendered)
             self.assertIn(str(controller_root / "autowork.sh"), rendered)
             self.assertIn(str(repo_dir / "autowork.sh"), rendered)
+            self.assertIn("Remediation:", rendered)
 
     def test_main_doctor_succeeds_when_wrappers_match_contract(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -424,6 +463,7 @@ class CliFlowTests(unittest.TestCase):
             self.assertIn("Wrapper contracts: controller=ok", rendered)
             self.assertIn("managed=drifted", rendered)
             self.assertIn(str(repo_dir / "autowork.sh"), rendered)
+            self.assertIn("Remediation:", rendered)
 
 
 if __name__ == "__main__":

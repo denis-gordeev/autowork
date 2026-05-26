@@ -93,10 +93,11 @@ pytest -q
 - Added regression coverage for the shared project-runtime env helper and restored the tracked controller-root `autowork.sh` so the checked-in wrapper matches the documented portfolio contract again.
 - Added a `doctor`-level wrapper drift audit that compares the tracked controller `autowork.sh` and discovered child wrappers against the generated contracts, and now exits non-zero when either side drifts.
 - Restored the live controller-root `autowork.sh` to the documented portfolio-wide `telegram-sync -> run -> review` flow so the new audit passes on the checked-in repository state.
+- Documented `AUTOWORK_INSTRUCTIONS.md` as a tracked policy file committed to the repository, resolving the open decision about its lifecycle.
+- `review` and `doctor` now emit remediation hints when wrapper drift is detected, so operators see the next safe command instead of only the drifted paths.
 
 ### Next Iterations
 
-- Resolve whether controller-level `AUTOWORK_INSTRUCTIONS.md` is meant to be committed policy or ignored local guidance, and document that decision.
 - Refresh persisted state and generated wrappers so older `state.json` entries and child repos pick up the new `cron_minute` + wrapper contract on the next real controller run.
 - Add collision-aware cron rebalancing for large portfolios so newly discovered projects prefer free minutes near the ideal slot without starving late additions.
 - Extend Telegram sync reporting beyond stdout: persist per-run handled/ignored counters in the review surface or journal so controller health is visible after unattended cron runs.
@@ -104,7 +105,6 @@ pytest -q
 - Surface the shared project-runtime env contract in operator-facing docs or dry-run output so downstream tools can see exactly which metadata keys are guaranteed.
 - Add a machine-readable `review` mode or persisted review artifact, so wrapper drift and future health checks can be consumed by cron dashboards without parsing plain text.
 - Decide whether `run` should optionally self-heal the controller-root wrapper in addition to child wrappers, or keep the root wrapper strictly tracked-by-git and only audited.
-- Add wrapper-remediation guidance to `review` when drift is detected, so operators see the next safe command instead of only the failing file path.
 
 ## What `run` Does
 
