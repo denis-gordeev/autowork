@@ -438,6 +438,14 @@ def review_summary(config: Config, state: State) -> str:
         lines.append(
             f"- {project.name} | branch={project.current_branch} | runs/day={project.daily_runs_target} | fork={'yes' if project.is_fork else 'no'} | topic={project.telegram_topic_id or 'pending'}"
         )
+    if state.last_telegram_sync:
+        sync = state.last_telegram_sync
+        ignored_breakdown = ", ".join(f"{k}={v}" for k, v in sorted(sync.ignored.items())) if sync.ignored else "none"
+        lines.append(
+            f"Last Telegram sync: handled={sync.handled}, ignored=[{ignored_breakdown}], at={sync.timestamp or 'unknown'}"
+        )
+    else:
+        lines.append("Last Telegram sync: none recorded")
     return "\n".join(lines)
 
 

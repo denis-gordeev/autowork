@@ -95,15 +95,19 @@ pytest -q
 - Restored the live controller-root `autowork.sh` to the documented portfolio-wide `telegram-sync -> run -> review` flow so the new audit passes on the checked-in repository state.
 - Documented `AUTOWORK_INSTRUCTIONS.md` as a tracked policy file committed to the repository, resolving the open decision about its lifecycle.
 - `review` and `doctor` now emit remediation hints when wrapper drift is detected, so operators see the next safe command instead of only the drifted paths.
+- Telegram sync summary is now persisted in `State.last_telegram_sync` with handled/ignored counters and timestamp, so unattended cron runs expose bot health without raw stdout logs.
+- `review` now surfaces the last Telegram sync summary in its output and in the `--json` machine-readable payload.
+- Added regression coverage for Telegram failure paths: `telegram-sync` returns exit code 1 when `get_updates` raises `TelegramError`.
+- `doctor` now lists the guaranteed project-runtime env keys so downstream tools know which metadata is available at dispatch time.
+- `review --json` outputs machine-readable JSON with wrapper contract status, project list, and Telegram sync summary.
 
 ### Next Iterations
 
 - Refresh persisted state and generated wrappers so older `state.json` entries and child repos pick up the new `cron_minute` + wrapper contract on the next real controller run.
 - Add collision-aware cron rebalancing for large portfolios so newly discovered projects prefer free minutes near the ideal slot without starving late additions.
-- Extend Telegram sync reporting beyond stdout: persist per-run handled/ignored counters in the review surface or journal so controller health is visible after unattended cron runs.
-- Add targeted coverage for `telegram-sync` failure paths, especially `get_updates` errors and failed downstream dispatches, so the status summary remains trustworthy under bot/API failures.
-- Surface the shared project-runtime env contract in operator-facing docs or dry-run output so downstream tools can see exactly which metadata keys are guaranteed.
-- Add a machine-readable `review` mode or persisted review artifact, so wrapper drift and future health checks can be consumed by cron dashboards without parsing plain text.
+- Add regression coverage for Telegram downstream dispatch failures, so status reporting stays trustworthy when base commands return non-zero exit codes.
+- Add a `--format json` flag to `doctor` for machine-readable health output mirroring the `review --json` pattern.
+- Consider persisting per-project Telegram dispatch outcomes in `TelegramSyncSummary` so individual repo failures are visible in the review surface.
 - Decide whether `run` should optionally self-heal the controller-root wrapper in addition to child wrappers, or keep the root wrapper strictly tracked-by-git and only audited.
 
 ## What `run` Does

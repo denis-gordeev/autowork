@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shlex
 import subprocess
@@ -8,7 +9,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-from .config import build_config, hydrate_project_runtime_env
+from .config import build_config, hydrate_project_runtime_env, project_runtime_env_path, write_json
 from .manager import (
     CRON_BLOCK_END,
     CRON_BLOCK_START,
@@ -25,6 +26,7 @@ from .manager import (
     sync_projects,
     write_telegram_mirror,
 )
+from .models import TelegramSyncSummary, utc_now_iso
 from .telegram import TelegramError, get_updates, send_message
 
 
@@ -72,6 +74,7 @@ def safe_sync_crontab(config, state) -> None:
 
 def doctor_checks(config) -> list[tuple[str, bool, str]]:
     wrapper_status = wrapper_contract_status(config)
+    guaranteed_env_keys = "AUTOWORK_CONTROLLER_ROOT, AUTOWORK_PROJECT_SLUG, TG_TOPIC_ID, AUTOWORK_TG_DIR"
 
     return [
         ("Managed repos root", config.repos_root.exists(), str(config.repos_root)),
@@ -79,6 +82,7 @@ def doctor_checks(config) -> list[tuple[str, bool, str]]:
         ("Telegram chat id", bool(config.telegram_chat_id), config.telegram_chat_id or "missing"),
         ("Base command", bool(config.autowork_base_command), config.autowork_base_command),
         ("GitHub owner", bool(config.github_owner), config.github_owner or "missing"),
+        ("Project runtime env keys", True, guaranteed_env_keys),
         ("Controller wrapper contract", bool(wrapper_status["root_ok"]), str(wrapper_status["root_path"])),
         ("Managed wrapper contracts", bool(wrapper_status["managed_ok"]), str(wrapper_status["managed_detail"])),
     ]
@@ -107,8 +111,39 @@ def cmd_review(args: argparse.Namespace) -> int:
     config = build_config(Path.cwd(), repos_root=args.repos_root)
     state = load_state(config)
     sync_projects(config, state, dry_run=args.dry_run)
-    print(review_summary(config, state))
+    if args.json:
+        review_data = _review_data(config, state)
+        print(json.dumps(review_data, ensure_ascii=False, indent=2))
+    else:
+        print(review_summary(config, state))
     return 0
+
+
+def _review_data(config, state) -> dict:
+    wrapper_status = wrapper_contract_status(config)
+    return {
+        "controller_root": str(config.project_root),
+        "repos_root": str(config.repos_root),
+        "tg_root": str(config.tg_root),
+        "managed_count": len(state.projects),
+        "wrapper_contracts": {
+            "controller": "ok" if wrapper_status["root_ok"] else "drifted",
+            "managed": "ok" if wrapper_status["managed_ok"] else "drifted",
+            "drifted_paths": wrapper_status["drifted_project_wrappers"],
+        },
+        "projects": [
+            {
+                "name": p.name,
+                "slug": p.slug,
+                "branch": p.current_branch,
+                "daily_runs": p.daily_runs_target,
+                "fork": p.is_fork,
+                "topic": p.telegram_topic_id,
+            }
+            for p in state.projects
+        ],
+        "last_telegram_sync": state.last_telegram_sync.to_dict() if state.last_telegram_sync else None,
+    }
 
 
 def cmd_sync_crontab(args: argparse.Namespace) -> int:
@@ -267,6 +302,12 @@ def cmd_telegram_sync(args: argparse.Namespace) -> int:
             except TelegramError:
                 pass
     save_state(config, state)
+    state.last_telegram_sync = TelegramSyncSummary(
+        handled=handled,
+        ignored=dict(ignored_updates),
+        timestamp=utc_now_iso(),
+    )
+    save_state(config, state)
     print(f"Handled {handled} Telegram update(s).")
     print(_format_ignored_updates(ignored_updates))
     return 0
@@ -302,6 +343,7 @@ def build_parser() -> argparse.ArgumentParser:
     review_parser = sub.add_parser("review", help="Print a summary of managed repositories.")
     review_parser.add_argument("--repos-root", default=None, help="Directory that contains managed repositories.")
     review_parser.add_argument("--dry-run", action="store_true", help="Avoid external side effects.")
+    review_parser.add_argument("--json", action="store_true", help="Output machine-readable JSON.")
     review_parser.set_defaults(func=cmd_review)
 
     cron_parser = sub.add_parser("sync-crontab", help="Install or refresh cron jobs for all managed repositories.")
