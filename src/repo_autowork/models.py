@@ -44,19 +44,50 @@ class ProjectRecord:
 
 
 @dataclass
-class TelegramSyncSummary:
-    handled: int = 0
-    ignored: dict[str, int] = field(default_factory=dict)
-    timestamp: str = ""
+class ProjectDispatchOutcome:
+    project_slug: str
+    update_id: int
+    success: bool
+    detail: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> "ProjectDispatchOutcome":
+        return cls(
+            project_slug=payload.get("project_slug", ""),
+            update_id=int(payload.get("update_id", 0)),
+            success=bool(payload.get("success", False)),
+            detail=payload.get("detail", ""),
+        )
+
+
+@dataclass
+class TelegramSyncSummary:
+    handled: int = 0
+    ignored: dict[str, int] = field(default_factory=dict)
+    dispatch_outcomes: list[ProjectDispatchOutcome] = field(default_factory=list)
+    timestamp: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "handled": self.handled,
+            "ignored": self.ignored,
+            "dispatch_outcomes": [o.to_dict() for o in self.dispatch_outcomes],
+            "timestamp": self.timestamp,
+        }
+
+    @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "TelegramSyncSummary":
+        outcomes = [
+            ProjectDispatchOutcome.from_dict(o)
+            for o in payload.get("dispatch_outcomes", [])
+        ]
         return cls(
             handled=int(payload.get("handled", 0)),
             ignored=payload.get("ignored", {}),
+            dispatch_outcomes=outcomes,
             timestamp=payload.get("timestamp", ""),
         )
 

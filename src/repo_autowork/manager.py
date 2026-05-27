@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .config import Config, project_runtime_env_path, read_json, write_json
 from .forge import detect_fork, list_open_work_items, merge_upstream, repo_snapshot
-from .models import ProjectRecord, State, content_hash, utc_now_iso
+from .models import ProjectRecord, ProjectDispatchOutcome, State, content_hash, utc_now_iso
 from .telegram import TelegramError, create_topic, send_message
 
 
@@ -178,6 +178,16 @@ def render_project_runtime_env(config: Config, project: ProjectRecord) -> str:
     )
 
 
+def ensure_root_wrapper(config: Config) -> bool:
+    root_wrapper_path = config.project_root / "autowork.sh"
+    expected = render_root_autowork(config)
+    if root_wrapper_path.exists() and root_wrapper_path.read_text(encoding="utf-8") == expected:
+        return False
+    root_wrapper_path.write_text(expected, encoding="utf-8")
+    root_wrapper_path.chmod(0o755)
+    return True
+
+
 def ensure_project_files(config: Config, project: ProjectRecord) -> None:
     repo_dir = Path(project.repo_path)
     repo_dir.mkdir(parents=True, exist_ok=True)
@@ -278,6 +288,7 @@ def wrapper_contract_status(config: Config) -> dict[str, object]:
 
 
 def sync_projects(config: Config, state: State, dry_run: bool = False) -> list[ProjectRecord]:
+    ensure_root_wrapper(config)
     active_paths = {str(path.resolve()) for path in discover_repo_dirs(config)}
     retained: list[ProjectRecord] = []
     known = {str(Path(project.repo_path).resolve()): project for project in state.projects}
@@ -444,6 +455,16 @@ def review_summary(config: Config, state: State) -> str:
         lines.append(
             f"Last Telegram sync: handled={sync.handled}, ignored=[{ignored_breakdown}], at={sync.timestamp or 'unknown'}"
         )
+        failed_outcomes = [o for o in sync.dispatch_outcomes if not o.success]
+        if failed_outcomes:
+            lines.append(
+                f"Failed dispatches: {', '.join(f'{o.project_slug}#{o.update_id}' for o in failed_outcomes)}"
+            )
+        succeeded_outcomes = [o for o in sync.dispatch_outcomes if o.success]
+        if succeeded_outcomes:
+            lines.append(
+                f"Succeeded dispatches: {', '.join(f'{o.project_slug}#{o.update_id}' for o in succeeded_outcomes)}"
+            )
     else:
         lines.append("Last Telegram sync: none recorded")
     return "\n".join(lines)

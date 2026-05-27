@@ -26,7 +26,7 @@ from .manager import (
     sync_projects,
     write_telegram_mirror,
 )
-from .models import TelegramSyncSummary, utc_now_iso
+from .models import ProjectDispatchOutcome, TelegramSyncSummary, utc_now_iso
 from .telegram import TelegramError, get_updates, send_message
 
 
@@ -143,6 +143,7 @@ def _review_data(config, state) -> dict:
             for p in state.projects
         ],
         "last_telegram_sync": state.last_telegram_sync.to_dict() if state.last_telegram_sync else None,
+        "dispatch_outcomes": [o.to_dict() for o in state.last_telegram_sync.dispatch_outcomes] if state.last_telegram_sync else [],
     }
 
 
@@ -259,6 +260,7 @@ def cmd_telegram_sync(args: argparse.Namespace) -> int:
     print(f"Fetched {len(updates)} Telegram update(s).", flush=True)
     handled = 0
     ignored_updates: Counter[str] = Counter()
+    dispatch_outcomes: list[ProjectDispatchOutcome] = []
     for update in updates:
         state.last_telegram_update_id = max(state.last_telegram_update_id, int(update.get("update_id", 0)))
         message = update.get("message")
@@ -287,12 +289,21 @@ def cmd_telegram_sync(args: argparse.Namespace) -> int:
         _load_project_env(project)
         result = _dispatch_telegram_message(config, project, text, dry_run=args.dry_run)
         handled += 1
-        print(f"Dispatched Telegram update {update['update_id']} to {project.name}")
+        success = result.returncode == 0
+        dispatch_outcomes.append(
+            ProjectDispatchOutcome(
+                project_slug=project.slug,
+                update_id=int(update.get("update_id", 0)),
+                success=success,
+                detail="" if success else (result.stderr or result.stdout or "").strip()[:200],
+            )
+        )
+        print(f"Dispatched Telegram update {update['update_id']} to {project.name}: {'success' if success else 'failed'}")
         if not args.dry_run:
             status_lines = [
                 f"Queued for {project.name}",
                 f"Inbox record: {inbox_path}",
-                "Status: success" if result.returncode == 0 else "Status: failed",
+                "Status: success" if success else "Status: failed",
             ]
             tail = (result.stderr or result.stdout or "").strip()
             if tail:
@@ -305,11 +316,15 @@ def cmd_telegram_sync(args: argparse.Namespace) -> int:
     state.last_telegram_sync = TelegramSyncSummary(
         handled=handled,
         ignored=dict(ignored_updates),
+        dispatch_outcomes=dispatch_outcomes,
         timestamp=utc_now_iso(),
     )
     save_state(config, state)
     print(f"Handled {handled} Telegram update(s).")
     print(_format_ignored_updates(ignored_updates))
+    failed_dispatches = [o for o in dispatch_outcomes if not o.success]
+    if failed_dispatches:
+        print(f"Failed dispatches: {', '.join(f'{o.project_slug}#{o.update_id}' for o in failed_dispatches)}")
     return 0
 
 

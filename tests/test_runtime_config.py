@@ -14,6 +14,7 @@ from repo_autowork.config import (
 from repo_autowork.manager import (
     discover_repo_dirs,
     ensure_project_files,
+    ensure_root_wrapper,
     render_project_autowork,
     render_root_autowork,
 )
@@ -159,6 +160,32 @@ class RuntimeConfigTests(unittest.TestCase):
 
             self.assertIn('repo_autowork.cli project-run --repo "$REPO_DIR" "$@"', wrapper)
             self.assertNotIn('telegram-sync "$@"', wrapper)
+
+    def test_ensure_root_wrapper_heals_drifted_controller_wrapper(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            config = build_config(root)
+            root_wrapper = root / "autowork.sh"
+
+            root_wrapper.write_text("# drifted child-only wrapper\n", encoding="utf-8")
+
+            healed = ensure_root_wrapper(config)
+
+            self.assertTrue(healed)
+            self.assertEqual(root_wrapper.read_text(encoding="utf-8"), render_root_autowork(config))
+
+    def test_ensure_root_wrapper_is_noop_when_contract_matches(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            config = build_config(root)
+            root_wrapper = root / "autowork.sh"
+
+            root_wrapper.write_text(render_root_autowork(config), encoding="utf-8")
+
+            healed = ensure_root_wrapper(config)
+
+            self.assertFalse(healed)
+            self.assertEqual(root_wrapper.read_text(encoding="utf-8"), render_root_autowork(config))
 
 
 if __name__ == "__main__":

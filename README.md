@@ -103,13 +103,16 @@ pytest -q
 - `doctor --format json` outputs machine-readable JSON with per-check status and wrapper contract details, mirroring the `review --json` pattern for automated health monitoring.
 - Added regression coverage for Telegram downstream dispatch failures: when the base command returns non-zero, `telegram-sync` reports the failed status back to the Telegram topic and completes the sync round.
 - Restored the live controller-root `autowork.sh` to the documented portfolio-wide `telegram-sync -> run -> review` flow so wrapper-contract audits pass.
+- Per-project Telegram dispatch outcomes are now persisted in `TelegramSyncSummary.dispatch_outcomes` as `ProjectDispatchOutcome` records, so individual repo failures are visible in the review surface and `review --json` payload.
+- `review` now lists succeeded and failed dispatches from the last Telegram sync.
+- The controller root wrapper is now self-healing: `sync_projects` (called by `run`) regenerates the root `autowork.sh` when it has drifted from the generated contract.
 
 ### Next Iterations
 
 - Refresh persisted state and generated wrappers so older `state.json` entries and child repos pick up the new `cron_minute` + wrapper contract on the next real controller run.
 - Add collision-aware cron rebalancing for large portfolios so newly discovered projects prefer free minutes near the ideal slot without starving late additions.
-- Consider persisting per-project Telegram dispatch outcomes in `TelegramSyncSummary` so individual repo failures are visible in the review surface.
-- Decide whether `run` should optionally self-heal the controller-root wrapper in addition to child wrappers, or keep the root wrapper strictly tracked-by-git and only audited.
+- Consider adding a `--self-heal` flag to `doctor` so it can regenerate drifted wrappers in addition to auditing them.
+- Consider surfacing per-project dispatch outcome history across multiple sync rounds rather than only the latest summary.
 
 ## What `run` Does
 

@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from repo_autowork import cli
 from repo_autowork.config import build_config
-from repo_autowork.models import ProjectRecord, State
+from repo_autowork.models import ProjectDispatchOutcome, ProjectRecord, State
 
 
 class CliFlowTests(unittest.TestCase):
@@ -756,6 +756,144 @@ class CliFlowTests(unittest.TestCase):
                 result = cli.cmd_telegram_sync(args)
 
             self.assertEqual(result, 0)
+
+    def test_telegram_sync_records_per_project_dispatch_outcomes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "controller"
+            repo_one = root.parent / "repo-alpha"
+            repo_two = root.parent / "repo-beta"
+            root.mkdir(parents=True)
+            repo_one.mkdir(parents=True)
+            repo_two.mkdir(parents=True)
+            for repo_dir, slug, topic_id in ((repo_one, "repo-alpha", 42), (repo_two, "repo-beta", 77)):
+                (repo_dir / ".autowork").mkdir(parents=True)
+                (repo_dir / ".autowork" / "project.env").write_text(
+                    f"AUTOWORK_PROJECT_SLUG={slug}\nTG_TOPIC_ID={topic_id}\n",
+                    encoding="utf-8",
+                )
+
+            config = build_config(root, repos_root=str(root.parent))
+            project_alpha = ProjectRecord(
+                slug="repo-alpha",
+                name="repo-alpha",
+                repo_path=str(repo_one),
+                telegram_topic_id=42,
+                tg_folder=str(root / "tg" / "repo-alpha"),
+            )
+            project_beta = ProjectRecord(
+                slug="repo-beta",
+                name="repo-beta",
+                repo_path=str(repo_two),
+                telegram_topic_id=77,
+                tg_folder=str(root / "tg" / "repo-beta"),
+            )
+            state = State(projects=[project_alpha, project_beta], last_telegram_update_id=99)
+            args = argparse.Namespace(repos_root=str(root.parent), timeout=0, dry_run=True)
+            updates = [
+                {
+                    "update_id": 100,
+                    "message": {
+                        "message_id": 1,
+                        "chat": {"id": config.telegram_chat_id},
+                        "from": {"is_bot": False},
+                        "message_thread_id": 42,
+                        "text": "Task for alpha",
+                    },
+                },
+                {
+                    "update_id": 101,
+                    "message": {
+                        "message_id": 2,
+                        "chat": {"id": config.telegram_chat_id},
+                        "from": {"is_bot": False},
+                        "message_thread_id": 77,
+                        "text": "Task for beta",
+                    },
+                },
+            ]
+
+            success_result = cli.subprocess.CompletedProcess(args=[], returncode=0, stdout="ok", stderr="")
+            failed_result = cli.subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="command failed")
+
+            dispatch_results = {"repo-alpha": success_result, "repo-beta": failed_result}
+
+            def fake_dispatch(_, passed_project, text, dry_run=False):
+                return dispatch_results[passed_project.slug]
+
+            with patch("repo_autowork.cli.build_config", return_value=config), patch(
+                "repo_autowork.cli.load_state", return_value=state
+            ), patch("repo_autowork.cli.sync_projects"), patch(
+                "repo_autowork.cli.get_updates", return_value=updates
+            ), patch("repo_autowork.cli.write_telegram_mirror", return_value=repo_one / "inbox" / "telegram" / "update-100.json"), patch(
+                "repo_autowork.cli._dispatch_telegram_message", side_effect=fake_dispatch
+            ), patch("repo_autowork.cli.save_state"):
+                result = cli.cmd_telegram_sync(args)
+
+            self.assertEqual(result, 0)
+            self.assertIsNotNone(state.last_telegram_sync)
+            outcomes = state.last_telegram_sync.dispatch_outcomes
+            self.assertEqual(len(outcomes), 2)
+
+            alpha_outcome = next(o for o in outcomes if o.project_slug == "repo-alpha")
+            self.assertTrue(alpha_outcome.success)
+            self.assertEqual(alpha_outcome.update_id, 100)
+
+            beta_outcome = next(o for o in outcomes if o.project_slug == "repo-beta")
+            self.assertFalse(beta_outcome.success)
+            self.assertEqual(beta_outcome.update_id, 101)
+            self.assertIn("command failed", beta_outcome.detail)
+
+    def test_review_json_includes_dispatch_outcomes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            controller_root = Path(tmp_dir) / "controller"
+            repos_root = Path(tmp_dir) / "managed"
+            controller_root.mkdir(parents=True)
+            repos_root.mkdir(parents=True)
+            repo_dir = repos_root / "alpha"
+            repo_dir.mkdir(parents=True)
+            (repo_dir / ".git").mkdir()
+
+            config = build_config(controller_root, repos_root=str(repos_root))
+            (controller_root / "autowork.sh").write_text(cli.render_root_autowork(config), encoding="utf-8")
+            (repo_dir / "autowork.sh").write_text(cli.render_project_autowork(config), encoding="utf-8")
+            sync_summary = cli.TelegramSyncSummary(
+                handled=2,
+                ignored={},
+                dispatch_outcomes=[
+                    ProjectDispatchOutcome(project_slug="alpha", update_id=100, success=True),
+                    ProjectDispatchOutcome(project_slug="alpha", update_id=101, success=False, detail="timeout"),
+                ],
+                timestamp="2026-05-27T12:00:00+00:00",
+            )
+            state = State(
+                projects=[
+                    ProjectRecord(
+                        slug="alpha",
+                        name="alpha",
+                        repo_path=str(repo_dir),
+                        current_branch="main",
+                        default_branch="main",
+                    )
+                ],
+                last_telegram_sync=sync_summary,
+            )
+            stdout = io.StringIO()
+
+            with patch("repo_autowork.cli.build_config", return_value=config), patch(
+                "repo_autowork.cli.load_state", return_value=state
+            ), patch("repo_autowork.cli.sync_projects"), patch(
+                "sys.argv", ["repo-autowork", "review", "--repos-root", str(repos_root), "--dry-run", "--json"]
+            ), patch("sys.stdout", stdout):
+                exit_code = cli.main()
+
+            self.assertEqual(exit_code, 0)
+            data = json.loads(stdout.getvalue())
+            self.assertIsNotNone(data["last_telegram_sync"])
+            self.assertEqual(len(data["last_telegram_sync"]["dispatch_outcomes"]), 2)
+            self.assertTrue(data["last_telegram_sync"]["dispatch_outcomes"][0]["success"])
+            self.assertFalse(data["last_telegram_sync"]["dispatch_outcomes"][1]["success"])
+            self.assertEqual(data["last_telegram_sync"]["dispatch_outcomes"][1]["detail"], "timeout")
+            self.assertEqual(len(data["dispatch_outcomes"]), 2)
 
 
 if __name__ == "__main__":
