@@ -596,6 +596,167 @@ class CliFlowTests(unittest.TestCase):
             self.assertIn("AUTOWORK_CONTROLLER_ROOT", rendered)
             self.assertIn("AUTOWORK_PROJECT_SLUG", rendered)
 
+    def test_doctor_format_json_outputs_machine_readable_data(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            controller_root = Path(tmp_dir) / "controller"
+            repos_root = Path(tmp_dir) / "managed"
+            controller_root.mkdir(parents=True)
+            repos_root.mkdir(parents=True)
+            repo_dir = repos_root / "alpha"
+            repo_dir.mkdir(parents=True)
+            (repo_dir / ".git").mkdir()
+
+            config = build_config(controller_root, repos_root=str(repos_root))
+            (controller_root / "autowork.sh").write_text(cli.render_root_autowork(config), encoding="utf-8")
+            (repo_dir / "autowork.sh").write_text(cli.render_project_autowork(config), encoding="utf-8")
+            stdout = io.StringIO()
+
+            with patch("repo_autowork.cli.build_config", return_value=config), patch(
+                "sys.argv", ["repo-autowork", "doctor", "--repos-root", str(repos_root), "--format", "json"]
+            ), patch("sys.stdout", stdout):
+                exit_code = cli.main()
+
+            self.assertEqual(exit_code, 0)
+            data = json.loads(stdout.getvalue())
+            self.assertIsInstance(data["checks"], list)
+            self.assertTrue(any(c["label"] == "Managed repos root" for c in data["checks"]))
+            self.assertTrue(any(c["label"] == "Controller wrapper contract" for c in data["checks"]))
+            self.assertEqual(data["wrapper_contracts"]["controller"], "ok")
+            self.assertEqual(data["wrapper_contracts"]["managed"], "ok")
+            self.assertEqual(data["wrapper_contracts"]["drifted_paths"], [])
+
+    def test_doctor_format_json_reports_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            controller_root = Path(tmp_dir) / "controller"
+            repos_root = Path(tmp_dir) / "managed"
+            controller_root.mkdir(parents=True)
+            repos_root.mkdir(parents=True)
+            repo_dir = repos_root / "alpha"
+            repo_dir.mkdir(parents=True)
+            (repo_dir / ".git").mkdir()
+            (controller_root / "autowork.sh").write_text("# drifted\n", encoding="utf-8")
+            (repo_dir / "autowork.sh").write_text("# drifted child\n", encoding="utf-8")
+
+            config = build_config(controller_root, repos_root=str(repos_root))
+            stdout = io.StringIO()
+
+            with patch("repo_autowork.cli.build_config", return_value=config), patch(
+                "sys.argv", ["repo-autowork", "doctor", "--repos-root", str(repos_root), "--format", "json"]
+            ), patch("sys.stdout", stdout):
+                exit_code = cli.main()
+
+            self.assertEqual(exit_code, 1)
+            data = json.loads(stdout.getvalue())
+            self.assertEqual(data["wrapper_contracts"]["controller"], "drifted")
+            self.assertEqual(data["wrapper_contracts"]["managed"], "drifted")
+            self.assertIn(str(repo_dir / "autowork.sh"), data["wrapper_contracts"]["drifted_paths"])
+
+    def test_telegram_sync_handles_base_command_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "controller"
+            repo_dir = root.parent / "managed-repo"
+            root.mkdir(parents=True)
+            repo_dir.mkdir(parents=True)
+            (repo_dir / ".autowork").mkdir(parents=True)
+            (repo_dir / ".autowork" / "project.env").write_text(
+                "AUTOWORK_PROJECT_SLUG=managed-repo\nTG_TOPIC_ID=42\n",
+                encoding="utf-8",
+            )
+
+            config = build_config(root, repos_root=str(root.parent))
+            project = ProjectRecord(
+                slug="managed-repo",
+                name="managed-repo",
+                repo_path=str(repo_dir),
+                telegram_topic_id=42,
+                tg_folder=str(root / "tg" / "managed-repo"),
+            )
+            state = State(projects=[project], last_telegram_update_id=99)
+            args = argparse.Namespace(repos_root=str(root.parent), timeout=0, dry_run=False)
+            updates = [
+                {
+                    "update_id": 100,
+                    "message": {
+                        "message_id": 1,
+                        "chat": {"id": config.telegram_chat_id},
+                        "from": {"is_bot": False},
+                        "message_thread_id": 42,
+                        "text": "Do something",
+                    },
+                },
+            ]
+
+            failed_result = cli.subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="error output", stderr="command failed"
+            )
+
+            with patch("repo_autowork.cli.build_config", return_value=config), patch(
+                "repo_autowork.cli.load_state", return_value=state
+            ), patch("repo_autowork.cli.sync_projects"), patch(
+                "repo_autowork.cli.get_updates", return_value=updates
+            ), patch("repo_autowork.cli.write_telegram_mirror", return_value=repo_dir / "inbox" / "telegram" / "update-100.json"), patch(
+                "repo_autowork.cli._dispatch_telegram_message", return_value=failed_result
+            ), patch("repo_autowork.cli.send_message") as send_mock, patch("repo_autowork.cli.save_state"):
+                result = cli.cmd_telegram_sync(args)
+
+            self.assertEqual(result, 0)
+            send_mock.assert_called_once()
+            status_text = send_mock.call_args[0][1]
+            self.assertIn("Status: failed", status_text)
+            self.assertIn("command failed", status_text)
+
+    def test_telegram_sync_handles_send_message_failure_gracefully(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "controller"
+            repo_dir = root.parent / "managed-repo"
+            root.mkdir(parents=True)
+            repo_dir.mkdir(parents=True)
+            (repo_dir / ".autowork").mkdir(parents=True)
+            (repo_dir / ".autowork" / "project.env").write_text(
+                "AUTOWORK_PROJECT_SLUG=managed-repo\nTG_TOPIC_ID=42\n",
+                encoding="utf-8",
+            )
+
+            config = build_config(root, repos_root=str(root.parent))
+            project = ProjectRecord(
+                slug="managed-repo",
+                name="managed-repo",
+                repo_path=str(repo_dir),
+                telegram_topic_id=42,
+                tg_folder=str(root / "tg" / "managed-repo"),
+            )
+            state = State(projects=[project], last_telegram_update_id=99)
+            args = argparse.Namespace(repos_root=str(root.parent), timeout=0, dry_run=False)
+            updates = [
+                {
+                    "update_id": 100,
+                    "message": {
+                        "message_id": 1,
+                        "chat": {"id": config.telegram_chat_id},
+                        "from": {"is_bot": False},
+                        "message_thread_id": 42,
+                        "text": "Do something",
+                    },
+                },
+            ]
+
+            success_result = cli.subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="ok", stderr=""
+            )
+
+            with patch("repo_autowork.cli.build_config", return_value=config), patch(
+                "repo_autowork.cli.load_state", return_value=state
+            ), patch("repo_autowork.cli.sync_projects"), patch(
+                "repo_autowork.cli.get_updates", return_value=updates
+            ), patch("repo_autowork.cli.write_telegram_mirror", return_value=repo_dir / "inbox" / "telegram" / "update-100.json"), patch(
+                "repo_autowork.cli._dispatch_telegram_message", return_value=success_result
+            ), patch(
+                "repo_autowork.cli.send_message", side_effect=cli.TelegramError("send failed")
+            ), patch("repo_autowork.cli.save_state"):
+                result = cli.cmd_telegram_sync(args)
+
+            self.assertEqual(result, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

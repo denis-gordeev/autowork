@@ -313,16 +313,36 @@ def cmd_telegram_sync(args: argparse.Namespace) -> int:
     return 0
 
 
+def _doctor_data(config) -> dict:
+    checks = doctor_checks(config)
+    wrapper_status = wrapper_contract_status(config)
+    return {
+        "checks": [
+            {"label": label, "ok": ok, "detail": detail}
+            for label, ok, detail in checks
+        ],
+        "wrapper_contracts": {
+            "controller": "ok" if wrapper_status["root_ok"] else "drifted",
+            "controller_path": wrapper_status["root_path"],
+            "managed": "ok" if wrapper_status["managed_ok"] else "drifted",
+            "drifted_paths": wrapper_status["drifted_project_wrappers"],
+        },
+    }
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     config = build_config(Path.cwd(), repos_root=args.repos_root)
     checks = doctor_checks(config)
-    summary_lines = [f"{'OK' if ok else 'MISSING'}: {label} ({detail})" for label, ok, detail in checks]
     wrapper_status = wrapper_contract_status(config)
-    if not wrapper_status["root_ok"]:
-        summary_lines.append(f"  Remediation: run `PYTHONPATH=src python3 -m repo_autowork.cli run` to regenerate the controller wrapper, or restore {wrapper_status['root_path']} from git.")
-    if not wrapper_status["managed_ok"]:
-        summary_lines.append("  Remediation: run `PYTHONPATH=src python3 -m repo_autowork.cli run` to regenerate drifted managed wrappers.")
-    print("\n".join(summary_lines))
+    if getattr(args, "format", None) == "json":
+        print(json.dumps(_doctor_data(config), ensure_ascii=False, indent=2))
+    else:
+        summary_lines = [f"{'OK' if ok else 'MISSING'}: {label} ({detail})" for label, ok, detail in checks]
+        if not wrapper_status["root_ok"]:
+            summary_lines.append(f"  Remediation: run `PYTHONPATH=src python3 -m repo_autowork.cli run` to regenerate the controller wrapper, or restore {wrapper_status['root_path']} from git.")
+        if not wrapper_status["managed_ok"]:
+            summary_lines.append("  Remediation: run `PYTHONPATH=src python3 -m repo_autowork.cli run` to regenerate drifted managed wrappers.")
+        print("\n".join(summary_lines))
     blocking_labels = {
         "Managed repos root",
         "Controller wrapper contract",
@@ -365,6 +385,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     doctor_parser = sub.add_parser("doctor", help="Validate environment and toolchain configuration.")
     doctor_parser.add_argument("--repos-root", default=None, help="Directory that contains managed repositories.")
+    doctor_parser.add_argument("--format", choices=["text", "json"], default="text", help="Output format (default: text).")
     doctor_parser.set_defaults(func=cmd_doctor)
 
     return parser
