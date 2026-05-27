@@ -72,9 +72,11 @@ def safe_sync_crontab(config, state) -> None:
         print(f"Warning: failed to sync crontab: {exc}", file=sys.stderr)
 
 
-def doctor_checks(config) -> list[tuple[str, bool, str]]:
-    wrapper_status = wrapper_contract_status(config)
+def doctor_checks(config, self_heal: bool = False) -> list[tuple[str, bool, str]]:
+    wrapper_status = wrapper_contract_status(config, self_heal=self_heal)
     guaranteed_env_keys = "AUTOWORK_CONTROLLER_ROOT, AUTOWORK_PROJECT_SLUG, TG_TOPIC_ID, AUTOWORK_TG_DIR"
+    root_label = "Controller wrapper contract (healed)" if wrapper_status.get("root_healed") else "Controller wrapper contract"
+    managed_label = "Managed wrapper contracts (healed)" if wrapper_status.get("healed_project_wrappers") else "Managed wrapper contracts"
 
     return [
         ("Managed repos root", config.repos_root.exists(), str(config.repos_root)),
@@ -83,13 +85,13 @@ def doctor_checks(config) -> list[tuple[str, bool, str]]:
         ("Base command", bool(config.autowork_base_command), config.autowork_base_command),
         ("GitHub owner", bool(config.github_owner), config.github_owner or "missing"),
         ("Project runtime env keys", True, guaranteed_env_keys),
-        ("Controller wrapper contract", bool(wrapper_status["root_ok"]), str(wrapper_status["root_path"])),
-        ("Managed wrapper contracts", bool(wrapper_status["managed_ok"]), str(wrapper_status["managed_detail"])),
+        (root_label, bool(wrapper_status["root_ok"]), str(wrapper_status["root_path"])),
+        (managed_label, bool(wrapper_status["managed_ok"]), str(wrapper_status["managed_detail"])),
     ]
 
 
-def doctor_summary(config) -> str:
-    checks = doctor_checks(config)
+def doctor_summary(config, self_heal: bool = False) -> str:
+    checks = doctor_checks(config, self_heal=self_heal)
     lines = []
     for label, ok, detail in checks:
         lines.append(f"{'OK' if ok else 'MISSING'}: {label} ({detail})")
@@ -144,6 +146,7 @@ def _review_data(config, state) -> dict:
         ],
         "last_telegram_sync": state.last_telegram_sync.to_dict() if state.last_telegram_sync else None,
         "dispatch_outcomes": [o.to_dict() for o in state.last_telegram_sync.dispatch_outcomes] if state.last_telegram_sync else [],
+        "telegram_sync_history": [s.to_dict() for s in state.telegram_sync_history],
     }
 
 
@@ -319,6 +322,7 @@ def cmd_telegram_sync(args: argparse.Namespace) -> int:
         dispatch_outcomes=dispatch_outcomes,
         timestamp=utc_now_iso(),
     )
+    state.append_sync_history(state.last_telegram_sync)
     save_state(config, state)
     print(f"Handled {handled} Telegram update(s).")
     print(_format_ignored_updates(ignored_updates))
@@ -328,9 +332,10 @@ def cmd_telegram_sync(args: argparse.Namespace) -> int:
     return 0
 
 
-def _doctor_data(config) -> dict:
-    checks = doctor_checks(config)
-    wrapper_status = wrapper_contract_status(config)
+def _doctor_data(config, self_heal: bool = False, wrapper_status: dict | None = None) -> dict:
+    if wrapper_status is None:
+        wrapper_status = wrapper_contract_status(config, self_heal=self_heal)
+    checks = doctor_checks(config, self_heal=self_heal)
     return {
         "checks": [
             {"label": label, "ok": ok, "detail": detail}
@@ -339,29 +344,41 @@ def _doctor_data(config) -> dict:
         "wrapper_contracts": {
             "controller": "ok" if wrapper_status["root_ok"] else "drifted",
             "controller_path": wrapper_status["root_path"],
+            "controller_healed": wrapper_status.get("root_healed", False),
             "managed": "ok" if wrapper_status["managed_ok"] else "drifted",
             "drifted_paths": wrapper_status["drifted_project_wrappers"],
+            "healed_paths": wrapper_status.get("healed_project_wrappers", []),
         },
     }
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
     config = build_config(Path.cwd(), repos_root=args.repos_root)
-    checks = doctor_checks(config)
-    wrapper_status = wrapper_contract_status(config)
+    self_heal = getattr(args, "self_heal", False)
+    wrapper_status = wrapper_contract_status(config, self_heal=self_heal)
+    checks = doctor_checks(config, self_heal=self_heal)
     if getattr(args, "format", None) == "json":
-        print(json.dumps(_doctor_data(config), ensure_ascii=False, indent=2))
+        print(json.dumps(_doctor_data(config, self_heal=self_heal, wrapper_status=wrapper_status), ensure_ascii=False, indent=2))
     else:
         summary_lines = [f"{'OK' if ok else 'MISSING'}: {label} ({detail})" for label, ok, detail in checks]
         if not wrapper_status["root_ok"]:
             summary_lines.append(f"  Remediation: run `PYTHONPATH=src python3 -m repo_autowork.cli run` to regenerate the controller wrapper, or restore {wrapper_status['root_path']} from git.")
         if not wrapper_status["managed_ok"]:
             summary_lines.append("  Remediation: run `PYTHONPATH=src python3 -m repo_autowork.cli run` to regenerate drifted managed wrappers.")
+        if wrapper_status.get("root_healed"):
+            summary_lines.append(f"  Self-healed controller wrapper: {wrapper_status['root_path']}")
+        if wrapper_status.get("healed_project_wrappers"):
+            paths = ", ".join(wrapper_status["healed_project_wrappers"][:3])
+            if len(wrapper_status["healed_project_wrappers"]) > 3:
+                paths += f", +{len(wrapper_status['healed_project_wrappers']) - 3} more"
+            summary_lines.append(f"  Self-healed managed wrappers: {paths}")
         print("\n".join(summary_lines))
     blocking_labels = {
         "Managed repos root",
         "Controller wrapper contract",
+        "Controller wrapper contract (healed)",
         "Managed wrapper contracts",
+        "Managed wrapper contracts (healed)",
     }
     return 0 if all(ok for label, ok, _ in checks if label in blocking_labels) else 1
 
@@ -401,6 +418,7 @@ def build_parser() -> argparse.ArgumentParser:
     doctor_parser = sub.add_parser("doctor", help="Validate environment and toolchain configuration.")
     doctor_parser.add_argument("--repos-root", default=None, help="Directory that contains managed repositories.")
     doctor_parser.add_argument("--format", choices=["text", "json"], default="text", help="Output format (default: text).")
+    doctor_parser.add_argument("--self-heal", action="store_true", help="Regenerate drifted wrappers instead of only auditing them.")
     doctor_parser.set_defaults(func=cmd_doctor)
 
     return parser

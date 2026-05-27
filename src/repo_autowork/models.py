@@ -99,6 +99,9 @@ class State:
     projects: list[ProjectRecord] = field(default_factory=list)
     last_telegram_update_id: int = 0
     last_telegram_sync: TelegramSyncSummary | None = None
+    telegram_sync_history: list[TelegramSyncSummary] = field(default_factory=list)
+
+    MAX_SYNC_HISTORY = 10
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -106,16 +109,24 @@ class State:
             "updated_at": self.updated_at,
             "last_telegram_update_id": self.last_telegram_update_id,
             "last_telegram_sync": self.last_telegram_sync.to_dict() if self.last_telegram_sync else None,
+            "telegram_sync_history": [s.to_dict() for s in self.telegram_sync_history],
             "projects": [project.to_dict() for project in self.projects],
         }
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "State":
         sync_payload = payload.get("last_telegram_sync")
+        history_payload = payload.get("telegram_sync_history", [])
         return cls(
             created_at=payload.get("created_at", utc_now_iso()),
             updated_at=payload.get("updated_at", utc_now_iso()),
             last_telegram_update_id=int(payload.get("last_telegram_update_id", 0) or 0),
             last_telegram_sync=TelegramSyncSummary.from_dict(sync_payload) if sync_payload else None,
+            telegram_sync_history=[TelegramSyncSummary.from_dict(s) for s in history_payload],
             projects=[ProjectRecord.from_dict(item) for item in payload.get("projects", [])],
         )
+
+    def append_sync_history(self, summary: TelegramSyncSummary) -> None:
+        self.telegram_sync_history.append(summary)
+        if len(self.telegram_sync_history) > self.MAX_SYNC_HISTORY:
+            self.telegram_sync_history = self.telegram_sync_history[-self.MAX_SYNC_HISTORY:]

@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from repo_autowork import cli
 from repo_autowork.config import build_config
-from repo_autowork.models import ProjectDispatchOutcome, ProjectRecord, State
+from repo_autowork.models import ProjectDispatchOutcome, ProjectRecord, State, TelegramSyncSummary
 
 
 class CliFlowTests(unittest.TestCase):
@@ -894,6 +894,169 @@ class CliFlowTests(unittest.TestCase):
             self.assertFalse(data["last_telegram_sync"]["dispatch_outcomes"][1]["success"])
             self.assertEqual(data["last_telegram_sync"]["dispatch_outcomes"][1]["detail"], "timeout")
             self.assertEqual(len(data["dispatch_outcomes"]), 2)
+
+
+    def test_doctor_self_heal_regenerates_drifted_wrappers(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            controller_root = Path(tmp_dir) / "controller"
+            repos_root = Path(tmp_dir) / "managed"
+            controller_root.mkdir(parents=True)
+            repos_root.mkdir(parents=True)
+            repo_dir = repos_root / "alpha"
+            repo_dir.mkdir(parents=True)
+            (repo_dir / ".git").mkdir()
+            (controller_root / "autowork.sh").write_text("# drifted\n", encoding="utf-8")
+            (repo_dir / "autowork.sh").write_text("# drifted child\n", encoding="utf-8")
+
+            config = build_config(controller_root, repos_root=str(repos_root))
+            stdout = io.StringIO()
+
+            with patch("repo_autowork.cli.build_config", return_value=config), patch(
+                "sys.argv", ["repo-autowork", "doctor", "--repos-root", str(repos_root), "--self-heal"]
+            ), patch("sys.stdout", stdout):
+                exit_code = cli.main()
+
+            self.assertEqual(exit_code, 0)
+            rendered = stdout.getvalue()
+            self.assertIn("healed", rendered.lower())
+            self.assertEqual(
+                (controller_root / "autowork.sh").read_text(encoding="utf-8"),
+                cli.render_root_autowork(config),
+            )
+            self.assertEqual(
+                (repo_dir / "autowork.sh").read_text(encoding="utf-8"),
+                cli.render_project_autowork(config),
+            )
+
+    def test_doctor_self_heal_json_reports_healed_status(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            controller_root = Path(tmp_dir) / "controller"
+            repos_root = Path(tmp_dir) / "managed"
+            controller_root.mkdir(parents=True)
+            repos_root.mkdir(parents=True)
+            repo_dir = repos_root / "alpha"
+            repo_dir.mkdir(parents=True)
+            (repo_dir / ".git").mkdir()
+            (controller_root / "autowork.sh").write_text("# drifted\n", encoding="utf-8")
+            (repo_dir / "autowork.sh").write_text("# drifted child\n", encoding="utf-8")
+
+            config = build_config(controller_root, repos_root=str(repos_root))
+            stdout = io.StringIO()
+
+            with patch("repo_autowork.cli.build_config", return_value=config), patch(
+                "sys.argv", ["repo-autowork", "doctor", "--repos-root", str(repos_root), "--format", "json", "--self-heal"]
+            ), patch("sys.stdout", stdout):
+                exit_code = cli.main()
+
+            self.assertEqual(exit_code, 0)
+            data = json.loads(stdout.getvalue())
+            self.assertTrue(data["wrapper_contracts"]["controller_healed"])
+            self.assertTrue(len(data["wrapper_contracts"]["healed_paths"]) > 0)
+
+    def test_state_sync_history_keeps_recent_rounds(self) -> None:
+        state = State()
+        for i in range(12):
+            summary = TelegramSyncSummary(handled=i, timestamp=f"2026-05-27T{i:02d}:00:00+00:00")
+            state.append_sync_history(summary)
+        self.assertEqual(len(state.telegram_sync_history), 10)
+        self.assertEqual(state.telegram_sync_history[0].handled, 2)
+        self.assertEqual(state.telegram_sync_history[-1].handled, 11)
+
+    def test_review_json_includes_sync_history(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            controller_root = Path(tmp_dir) / "controller"
+            repos_root = Path(tmp_dir) / "managed"
+            controller_root.mkdir(parents=True)
+            repos_root.mkdir(parents=True)
+            repo_dir = repos_root / "alpha"
+            repo_dir.mkdir(parents=True)
+            (repo_dir / ".git").mkdir()
+
+            config = build_config(controller_root, repos_root=str(repos_root))
+            (controller_root / "autowork.sh").write_text(cli.render_root_autowork(config), encoding="utf-8")
+            (repo_dir / "autowork.sh").write_text(cli.render_project_autowork(config), encoding="utf-8")
+            sync_summary = TelegramSyncSummary(
+                handled=1,
+                ignored={},
+                dispatch_outcomes=[],
+                timestamp="2026-05-27T12:00:00+00:00",
+            )
+            state = State(
+                projects=[
+                    ProjectRecord(
+                        slug="alpha",
+                        name="alpha",
+                        repo_path=str(repo_dir),
+                        current_branch="main",
+                        default_branch="main",
+                    )
+                ],
+                last_telegram_sync=sync_summary,
+                telegram_sync_history=[sync_summary],
+            )
+            stdout = io.StringIO()
+
+            with patch("repo_autowork.cli.build_config", return_value=config), patch(
+                "repo_autowork.cli.load_state", return_value=state
+            ), patch("repo_autowork.cli.sync_projects"), patch(
+                "sys.argv", ["repo-autowork", "review", "--repos-root", str(repos_root), "--dry-run", "--json"]
+            ), patch("sys.stdout", stdout):
+                exit_code = cli.main()
+
+            self.assertEqual(exit_code, 0)
+            data = json.loads(stdout.getvalue())
+            self.assertEqual(len(data["telegram_sync_history"]), 1)
+            self.assertEqual(data["telegram_sync_history"][0]["handled"], 1)
+
+    def test_review_text_includes_sync_history_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            controller_root = Path(tmp_dir) / "controller"
+            repos_root = Path(tmp_dir) / "managed"
+            controller_root.mkdir(parents=True)
+            repos_root.mkdir(parents=True)
+            repo_dir = repos_root / "alpha"
+            repo_dir.mkdir(parents=True)
+            (repo_dir / ".git").mkdir()
+
+            config = build_config(controller_root, repos_root=str(repos_root))
+            (controller_root / "autowork.sh").write_text(cli.render_root_autowork(config), encoding="utf-8")
+            (repo_dir / "autowork.sh").write_text(cli.render_project_autowork(config), encoding="utf-8")
+            sync_summary = TelegramSyncSummary(
+                handled=2,
+                ignored={},
+                dispatch_outcomes=[
+                    ProjectDispatchOutcome(project_slug="alpha", update_id=100, success=True),
+                    ProjectDispatchOutcome(project_slug="alpha", update_id=101, success=False, detail="timeout"),
+                ],
+                timestamp="2026-05-27T12:00:00+00:00",
+            )
+            state = State(
+                projects=[
+                    ProjectRecord(
+                        slug="alpha",
+                        name="alpha",
+                        repo_path=str(repo_dir),
+                        current_branch="main",
+                        default_branch="main",
+                    )
+                ],
+                last_telegram_sync=sync_summary,
+                telegram_sync_history=[sync_summary],
+            )
+            stdout = io.StringIO()
+
+            with patch("repo_autowork.cli.build_config", return_value=config), patch(
+                "repo_autowork.cli.load_state", return_value=state
+            ), patch("repo_autowork.cli.sync_projects"), patch(
+                "sys.argv", ["repo-autowork", "review", "--repos-root", str(repos_root), "--dry-run"]
+            ), patch("sys.stdout", stdout):
+                exit_code = cli.main()
+
+            self.assertEqual(exit_code, 0)
+            rendered = stdout.getvalue()
+            self.assertIn("Sync history", rendered)
+            self.assertIn("total_handled=2", rendered)
+            self.assertIn("total_failed_dispatches=1", rendered)
 
 
 if __name__ == "__main__":

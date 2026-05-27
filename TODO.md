@@ -40,10 +40,16 @@
 - `review` and `review --json` now list succeeded and failed dispatches from the last Telegram sync, making per-project dispatch health visible without raw stdout logs.
 - The controller root wrapper is now self-healing: `sync_projects` (called by `run`) calls `ensure_root_wrapper` to regenerate the root `autowork.sh` when it has drifted from the generated contract, preventing the recurring drift regression.
 - The live controller-root `autowork.sh` has been restored to the documented portfolio-wide `telegram-sync -> run -> review` flow.
+- `doctor --self-heal` now regenerates drifted controller and managed wrappers in addition to auditing them, so operators can fix drift in a single command without running the full `run` cycle.
+- `doctor --format json --self-heal` reports `controller_healed` and `healed_paths` so automated tooling can detect when self-healing occurred.
+- Telegram sync history is now persisted in `State.telegram_sync_history` (capped at 10 rounds), so dispatch outcome trends are visible across multiple sync rounds rather than only the latest summary.
+- `review` and `review --json` now include a sync history summary showing total handled updates and failed dispatches across recent rounds.
+- Collision-aware cron minute assignment now prefers the nearest free slot to the ideal minute for newly discovered projects, preventing arbitrary minute gaps in large portfolios.
+- Restored the live controller-root `autowork.sh` to the documented portfolio-wide `telegram-sync -> run -> review` flow (again).
 
 ## Next
 
 - Refresh `data/state.json` and generated child `autowork.sh` wrappers with a real controller run so live managed repos inherit the persisted cron minutes and current wrapper contract.
-- Revisit cron allocation for larger portfolios: keep persisted minutes stable, but prefer nearby free slots for newly discovered repositories instead of drifting to arbitrary gaps.
-- Consider adding `--self-heal` flag to `doctor` so it can regenerate drifted wrappers in addition to auditing them.
-- Consider surfacing per-project dispatch outcome history across multiple sync rounds rather than only the latest summary.
+- Consider adding a `--self-heal` flag to `review` as well, so wrapper drift can be fixed from either `doctor` or `review`.
+- Consider exposing per-project dispatch outcome history as a dedicated `history` CLI subcommand for deeper trend analysis.
+- Consider adding a `--json` output for `telegram-sync` to support automated monitoring of sync rounds.

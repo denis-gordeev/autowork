@@ -156,8 +156,11 @@ def assign_project_cron_minutes(projects: list[ProjectRecord]) -> None:
             continue
         ideal_minute = cron_minute_for_project(project_index, total_projects)
         candidate_minutes = sorted(range(1, 60), key=lambda minute: (abs(minute - ideal_minute), minute))
-        project.cron_minute = next((minute for minute in candidate_minutes if minute not in used_minutes), ideal_minute)
-        used_minutes.add(project.cron_minute)
+        assigned = next((minute for minute in candidate_minutes if minute not in used_minutes), None)
+        if assigned is None:
+            assigned = ideal_minute
+        project.cron_minute = assigned
+        used_minutes.add(assigned)
 
 
 def project_metadata_dir(project: ProjectRecord) -> Path:
@@ -253,36 +256,60 @@ def ensure_project_topic(config: Config, project: ProjectRecord, dry_run: bool =
         project.notes.append(f"Telegram setup failed: {exc}")
 
 
-def wrapper_contract_status(config: Config) -> dict[str, object]:
+def wrapper_contract_status(config: Config, self_heal: bool = False) -> dict[str, object]:
     root_wrapper_path = config.project_root / "autowork.sh"
     root_wrapper_expected = render_root_autowork(config)
     root_wrapper_ok = root_wrapper_path.exists() and root_wrapper_path.read_text(encoding="utf-8") == root_wrapper_expected
+    root_healed = False
+    if not root_wrapper_ok and self_heal:
+        root_wrapper_path.write_text(root_wrapper_expected, encoding="utf-8")
+        root_wrapper_path.chmod(0o755)
+        root_wrapper_ok = True
+        root_healed = True
 
     expected_project_wrapper = render_project_autowork(config)
     discovered_repos = [repo_dir for repo_dir in discover_repo_dirs(config) if repo_dir.resolve() != config.project_root.resolve()]
     drifted_project_wrappers: list[str] = []
+    healed_project_wrappers: list[str] = []
     for repo_dir in discovered_repos:
         wrapper_path = repo_dir / "autowork.sh"
         if not wrapper_path.exists():
-            drifted_project_wrappers.append(str(wrapper_path))
+            if self_heal:
+                wrapper_path.write_text(expected_project_wrapper, encoding="utf-8")
+                wrapper_path.chmod(0o755)
+                healed_project_wrappers.append(str(wrapper_path))
+            else:
+                drifted_project_wrappers.append(str(wrapper_path))
             continue
         if wrapper_path.read_text(encoding="utf-8") != expected_project_wrapper:
-            drifted_project_wrappers.append(str(wrapper_path))
+            if self_heal:
+                wrapper_path.write_text(expected_project_wrapper, encoding="utf-8")
+                wrapper_path.chmod(0o755)
+                healed_project_wrappers.append(str(wrapper_path))
+            else:
+                drifted_project_wrappers.append(str(wrapper_path))
 
     if drifted_project_wrappers:
         preview = ", ".join(drifted_project_wrappers[:3])
         if len(drifted_project_wrappers) > 3:
             preview += f", +{len(drifted_project_wrappers) - 3} more"
         managed_detail = preview
+    elif healed_project_wrappers:
+        preview = ", ".join(healed_project_wrappers[:3])
+        if len(healed_project_wrappers) > 3:
+            preview += f", +{len(healed_project_wrappers) - 3} more"
+        managed_detail = f"healed {preview}"
     else:
         managed_detail = f"{len(discovered_repos)} managed wrapper(s) match the generated contract"
 
     return {
         "root_ok": root_wrapper_ok,
         "root_path": str(root_wrapper_path),
+        "root_healed": root_healed,
         "managed_ok": not drifted_project_wrappers,
         "managed_detail": managed_detail,
         "drifted_project_wrappers": drifted_project_wrappers,
+        "healed_project_wrappers": healed_project_wrappers,
         "managed_repo_count": len(discovered_repos),
     }
 
@@ -467,6 +494,13 @@ def review_summary(config: Config, state: State) -> str:
             )
     else:
         lines.append("Last Telegram sync: none recorded")
+    if state.telegram_sync_history:
+        total_syncs = len(state.telegram_sync_history)
+        total_handled = sum(s.handled for s in state.telegram_sync_history)
+        total_failed = sum(1 for s in state.telegram_sync_history for o in s.dispatch_outcomes if not o.success)
+        lines.append(
+            f"Sync history (last {total_syncs} round(s)): total_handled={total_handled}, total_failed_dispatches={total_failed}"
+        )
     return "\n".join(lines)
 
 
