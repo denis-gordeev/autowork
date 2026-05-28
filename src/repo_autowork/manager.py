@@ -452,8 +452,8 @@ def send_project_update(config: Config, project: ProjectRecord, text: str, dry_r
         project.notes.append(f"Telegram update failed: {exc}")
 
 
-def review_summary(config: Config, state: State) -> str:
-    wrapper_status = wrapper_contract_status(config)
+def review_summary(config: Config, state: State, self_heal: bool = False) -> str:
+    wrapper_status = wrapper_contract_status(config, self_heal=self_heal)
     lines = [
         f"Controller repo: {config.project_root}",
         f"Managed repos root: {config.repos_root}",
@@ -472,6 +472,13 @@ def review_summary(config: Config, state: State) -> str:
         lines.append(f"  Remediation: run `PYTHONPATH=src python3 -m repo_autowork.cli run` to regenerate the controller wrapper, or restore {wrapper_status['root_path']} from git.")
     if not wrapper_status["managed_ok"]:
         lines.append("  Remediation: run `PYTHONPATH=src python3 -m repo_autowork.cli run` to regenerate drifted managed wrappers.")
+    if wrapper_status.get("root_healed"):
+        lines.append(f"  Self-healed controller wrapper: {wrapper_status['root_path']}")
+    if wrapper_status.get("healed_project_wrappers"):
+        preview = ", ".join(wrapper_status["healed_project_wrappers"][:3])
+        if len(wrapper_status["healed_project_wrappers"]) > 3:
+            preview += f", +{len(wrapper_status['healed_project_wrappers']) - 3} more"
+        lines.append(f"  Self-healed managed wrappers: {preview}")
     for project in state.projects:
         lines.append(
             f"- {project.name} | branch={project.current_branch} | runs/day={project.daily_runs_target} | fork={'yes' if project.is_fork else 'no'} | topic={project.telegram_topic_id or 'pending'}"

@@ -46,10 +46,15 @@
 - `review` and `review --json` now include a sync history summary showing total handled updates and failed dispatches across recent rounds.
 - Collision-aware cron minute assignment now prefers the nearest free slot to the ideal minute for newly discovered projects, preventing arbitrary minute gaps in large portfolios.
 - Restored the live controller-root `autowork.sh` to the documented portfolio-wide `telegram-sync -> run -> review` flow (again).
+- `review --self-heal` now regenerates drifted controller and managed wrappers, matching the `doctor --self-heal` behavior so wrapper drift can be fixed from either command.
+- `review --json --self-heal` reports `controller_healed` and `healed_paths` in the machine-readable payload, so automated tooling can detect healing from the review surface as well.
+- `telegram-sync --json` now outputs a machine-readable JSON payload with handled/ignored counts, dispatch outcomes, last update ID, and timestamp, so automated monitoring can consume sync round data without parsing text.
+- Added a `history` CLI subcommand that exposes per-project dispatch outcome trends across recent Telegram sync rounds, with optional `--project` slug filtering and `--json` output.
+- Regression coverage now guards `review --self-heal` (both text and JSON), `telegram-sync --json`, and the `history` subcommand (text, JSON, project filter, empty state).
 
 ## Next
 
 - Refresh `data/state.json` and generated child `autowork.sh` wrappers with a real controller run so live managed repos inherit the persisted cron minutes and current wrapper contract.
-- Consider adding a `--self-heal` flag to `review` as well, so wrapper drift can be fixed from either `doctor` or `review`.
-- Consider exposing per-project dispatch outcome history as a dedicated `history` CLI subcommand for deeper trend analysis.
-- Consider adding a `--json` output for `telegram-sync` to support automated monitoring of sync rounds.
+- Consider adding a `--self-heal` flag to `telegram-sync` so wrapper drift detected during sync can be fixed inline.
+- Consider adding `--limit` and `--since` flags to the `history` subcommand for finer-grained trend queries.
+- Consider adding a `--format json` alias to `run` for structured output during automated workflows.

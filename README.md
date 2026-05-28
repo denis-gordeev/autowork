@@ -62,6 +62,8 @@ PYTHONPATH=src python3 -m repo_autowork.cli review
 PYTHONPATH=src python3 -m repo_autowork.cli sync-crontab
 PYTHONPATH=src python3 -m repo_autowork.cli project-run --repo /Users/denis/programming/autowork/mcp-russia --dry-run
 PYTHONPATH=src python3 -m repo_autowork.cli telegram-sync
+PYTHONPATH=src python3 -m repo_autowork.cli history
+PYTHONPATH=src python3 -m repo_autowork.cli history --project alpha --json
 ./autowork.sh --dry-run
 pytest -q
 ```
@@ -112,13 +114,18 @@ pytest -q
 - `review` and `review --json` now include a sync history summary showing total handled updates and failed dispatches across recent rounds.
 - Collision-aware cron minute assignment now prefers the nearest free slot to the ideal minute for newly discovered projects, preventing arbitrary minute gaps in large portfolios.
 - Restored the live controller-root `autowork.sh` to the documented portfolio-wide `telegram-sync -> run -> review` flow (again).
+- `review --self-heal` now regenerates drifted controller and managed wrappers, matching `doctor --self-heal` so wrapper drift can be fixed from either command.
+- `review --json --self-heal` reports `controller_healed` and `healed_paths` in the machine-readable payload.
+- `telegram-sync --json` now outputs a machine-readable JSON payload with handled/ignored counts, dispatch outcomes, last update ID, and timestamp.
+- Added a `history` CLI subcommand that exposes per-project dispatch outcome trends across recent Telegram sync rounds, with optional `--project` slug filtering and `--json` output.
+- Regression coverage now guards `review --self-heal` (text and JSON), `telegram-sync --json`, and the `history` subcommand (text, JSON, project filter, empty state).
 
 ### Next Iterations
 
 - Refresh persisted state and generated wrappers so older `state.json` entries and child repos pick up the new `cron_minute` + wrapper contract on the next real controller run.
-- Consider adding a `--self-heal` flag to `review` so wrapper drift can be fixed from either `doctor` or `review`.
-- Consider exposing per-project dispatch outcome history as a dedicated `history` CLI subcommand for deeper trend analysis.
-- Consider adding a `--json` output for `telegram-sync` to support automated monitoring of sync rounds.
+- Consider adding a `--self-heal` flag to `telegram-sync` so wrapper drift detected during sync can be fixed inline.
+- Consider adding `--limit` and `--since` flags to the `history` subcommand for finer-grained trend queries.
+- Consider adding a `--format json` alias to `run` for structured output during automated workflows.
 
 ## What `run` Does
 

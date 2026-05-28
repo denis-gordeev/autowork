@@ -113,16 +113,17 @@ def cmd_review(args: argparse.Namespace) -> int:
     config = build_config(Path.cwd(), repos_root=args.repos_root)
     state = load_state(config)
     sync_projects(config, state, dry_run=args.dry_run)
+    self_heal = getattr(args, "self_heal", False)
     if args.json:
-        review_data = _review_data(config, state)
+        review_data = _review_data(config, state, self_heal=self_heal)
         print(json.dumps(review_data, ensure_ascii=False, indent=2))
     else:
-        print(review_summary(config, state))
+        print(review_summary(config, state, self_heal=self_heal))
     return 0
 
 
-def _review_data(config, state) -> dict:
-    wrapper_status = wrapper_contract_status(config)
+def _review_data(config, state, self_heal: bool = False) -> dict:
+    wrapper_status = wrapper_contract_status(config, self_heal=self_heal)
     return {
         "controller_root": str(config.project_root),
         "repos_root": str(config.repos_root),
@@ -130,8 +131,10 @@ def _review_data(config, state) -> dict:
         "managed_count": len(state.projects),
         "wrapper_contracts": {
             "controller": "ok" if wrapper_status["root_ok"] else "drifted",
+            "controller_healed": wrapper_status.get("root_healed", False),
             "managed": "ok" if wrapper_status["managed_ok"] else "drifted",
             "drifted_paths": wrapper_status["drifted_project_wrappers"],
+            "healed_paths": wrapper_status.get("healed_project_wrappers", []),
         },
         "projects": [
             {
@@ -248,19 +251,25 @@ def cmd_telegram_sync(args: argparse.Namespace) -> int:
     config = build_config(Path.cwd(), repos_root=args.repos_root)
     state = load_state(config)
     sync_projects(config, state, dry_run=args.dry_run)
+    json_output = getattr(args, "json", False)
     offset = state.last_telegram_update_id + 1 if state.last_telegram_update_id else None
-    print(
-        f"Syncing Telegram updates for {len(state.projects)} managed repositories"
-        + (f" starting from offset {offset}" if offset is not None else " from the current head")
-        + "...",
-        flush=True,
-    )
+    if not json_output:
+        print(
+            f"Syncing Telegram updates for {len(state.projects)} managed repositories"
+            + (f" starting from offset {offset}" if offset is not None else " from the current head")
+            + "...",
+            flush=True,
+        )
     try:
         updates = get_updates(config, offset=offset, timeout=args.timeout)
     except TelegramError as exc:
-        print(f"Telegram sync failed: {exc}", file=sys.stderr)
+        if json_output:
+            print(json.dumps({"error": str(exc)}, ensure_ascii=False, indent=2))
+        else:
+            print(f"Telegram sync failed: {exc}", file=sys.stderr)
         return 1
-    print(f"Fetched {len(updates)} Telegram update(s).", flush=True)
+    if not json_output:
+        print(f"Fetched {len(updates)} Telegram update(s).", flush=True)
     handled = 0
     ignored_updates: Counter[str] = Counter()
     dispatch_outcomes: list[ProjectDispatchOutcome] = []
@@ -301,7 +310,8 @@ def cmd_telegram_sync(args: argparse.Namespace) -> int:
                 detail="" if success else (result.stderr or result.stdout or "").strip()[:200],
             )
         )
-        print(f"Dispatched Telegram update {update['update_id']} to {project.name}: {'success' if success else 'failed'}")
+        if not json_output:
+            print(f"Dispatched Telegram update {update['update_id']} to {project.name}: {'success' if success else 'failed'}")
         if not args.dry_run:
             status_lines = [
                 f"Queued for {project.name}",
@@ -324,11 +334,21 @@ def cmd_telegram_sync(args: argparse.Namespace) -> int:
     )
     state.append_sync_history(state.last_telegram_sync)
     save_state(config, state)
-    print(f"Handled {handled} Telegram update(s).")
-    print(_format_ignored_updates(ignored_updates))
-    failed_dispatches = [o for o in dispatch_outcomes if not o.success]
-    if failed_dispatches:
-        print(f"Failed dispatches: {', '.join(f'{o.project_slug}#{o.update_id}' for o in failed_dispatches)}")
+    sync_data = {
+        "handled": handled,
+        "ignored": dict(ignored_updates),
+        "dispatch_outcomes": [o.to_dict() for o in dispatch_outcomes],
+        "last_update_id": state.last_telegram_update_id,
+        "timestamp": state.last_telegram_sync.timestamp,
+    }
+    if getattr(args, "json", False):
+        print(json.dumps(sync_data, ensure_ascii=False, indent=2))
+    else:
+        print(f"Handled {handled} Telegram update(s).")
+        print(_format_ignored_updates(ignored_updates))
+        failed_dispatches = [o for o in dispatch_outcomes if not o.success]
+        if failed_dispatches:
+            print(f"Failed dispatches: {', '.join(f'{o.project_slug}#{o.update_id}' for o in failed_dispatches)}")
     return 0
 
 
@@ -383,6 +403,53 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     return 0 if all(ok for label, ok, _ in checks if label in blocking_labels) else 1
 
 
+def cmd_history(args: argparse.Namespace) -> int:
+    config = build_config(Path.cwd(), repos_root=args.repos_root)
+    state = load_state(config)
+    project_slug = getattr(args, "project", None)
+    history_data = _history_data(state, project_slug=project_slug)
+    if getattr(args, "json", False):
+        print(json.dumps(history_data, ensure_ascii=False, indent=2))
+    else:
+        print(_history_text(history_data))
+    return 0
+
+
+def _history_data(state, project_slug: str | None = None) -> dict:
+    rounds = []
+    for sync in state.telegram_sync_history:
+        outcomes = sync.dispatch_outcomes
+        if project_slug:
+            outcomes = [o for o in outcomes if o.project_slug == project_slug]
+        rounds.append({
+            "timestamp": sync.timestamp,
+            "handled": sync.handled,
+            "ignored": sync.ignored,
+            "outcomes": [o.to_dict() for o in outcomes],
+        })
+    return {
+        "total_rounds": len(rounds),
+        "project_filter": project_slug,
+        "rounds": rounds,
+    }
+
+
+def _history_text(data: dict) -> str:
+    filter_note = f" filtered to {data['project_filter']}" if data["project_filter"] else ""
+    lines = [f"Dispatch history ({data['total_rounds']} round(s)){filter_note}:"]
+    for round_entry in data["rounds"]:
+        ts = round_entry["timestamp"] or "unknown"
+        handled = round_entry["handled"]
+        outcomes = round_entry["outcomes"]
+        lines.append(f"  {ts} | handled={handled}")
+        for o in outcomes:
+            status = "success" if o["success"] else f"failed ({o['detail']})"
+            lines.append(f"    - {o['project_slug']}#{o['update_id']}: {status}")
+    if not data["rounds"]:
+        lines.append("  No sync history recorded yet.")
+    return "\n".join(lines)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Manage autowork automation across local git repositories.")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -396,6 +463,7 @@ def build_parser() -> argparse.ArgumentParser:
     review_parser.add_argument("--repos-root", default=None, help="Directory that contains managed repositories.")
     review_parser.add_argument("--dry-run", action="store_true", help="Avoid external side effects.")
     review_parser.add_argument("--json", action="store_true", help="Output machine-readable JSON.")
+    review_parser.add_argument("--self-heal", action="store_true", help="Regenerate drifted wrappers instead of only auditing them.")
     review_parser.set_defaults(func=cmd_review)
 
     cron_parser = sub.add_parser("sync-crontab", help="Install or refresh cron jobs for all managed repositories.")
@@ -413,6 +481,7 @@ def build_parser() -> argparse.ArgumentParser:
     telegram_parser.add_argument("--repos-root", default=None, help="Directory that contains managed repositories.")
     telegram_parser.add_argument("--timeout", type=int, default=0, help="Telegram long-poll timeout in seconds.")
     telegram_parser.add_argument("--dry-run", action="store_true", help="Do not send confirmation messages back to Telegram.")
+    telegram_parser.add_argument("--json", action="store_true", help="Output machine-readable JSON.")
     telegram_parser.set_defaults(func=cmd_telegram_sync)
 
     doctor_parser = sub.add_parser("doctor", help="Validate environment and toolchain configuration.")
@@ -420,6 +489,12 @@ def build_parser() -> argparse.ArgumentParser:
     doctor_parser.add_argument("--format", choices=["text", "json"], default="text", help="Output format (default: text).")
     doctor_parser.add_argument("--self-heal", action="store_true", help="Regenerate drifted wrappers instead of only auditing them.")
     doctor_parser.set_defaults(func=cmd_doctor)
+
+    history_parser = sub.add_parser("history", help="Show Telegram dispatch outcome history across recent sync rounds.")
+    history_parser.add_argument("--repos-root", default=None, help="Directory that contains managed repositories.")
+    history_parser.add_argument("--project", default=None, help="Filter outcomes to a specific project slug.")
+    history_parser.add_argument("--json", action="store_true", help="Output machine-readable JSON.")
+    history_parser.set_defaults(func=cmd_history)
 
     return parser
 
