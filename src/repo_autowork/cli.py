@@ -101,10 +101,14 @@ def doctor_summary(config, self_heal: bool = False) -> str:
 def cmd_run(args: argparse.Namespace) -> int:
     config = build_config(Path.cwd(), repos_root=args.repos_root)
     state = load_state(config)
+    self_heal = getattr(args, "self_heal", False)
+    heal_status = None
+    if self_heal:
+        heal_status = wrapper_contract_status(config, self_heal=True)
     projects = sync_projects(config, state, dry_run=args.dry_run)
     safe_sync_crontab(config, state)
     if getattr(args, "format", None) == "json":
-        run_data = {
+        run_data: dict = {
             "synced_count": len(projects),
             "projects": [
                 {
@@ -116,11 +120,26 @@ def cmd_run(args: argparse.Namespace) -> int:
                 for p in projects
             ],
         }
+        if self_heal and heal_status is not None:
+            run_data["wrapper_contracts"] = {
+                "controller": "ok" if heal_status["root_ok"] else "drifted",
+                "controller_healed": heal_status.get("root_healed", False),
+                "managed": "ok" if heal_status["managed_ok"] else "drifted",
+                "healed_paths": heal_status.get("healed_project_wrappers", []),
+            }
         print(json.dumps(run_data, ensure_ascii=False, indent=2))
     else:
         print(f"Synced {len(projects)} repositories.")
         for project in projects:
             print(f"- {project.name} | {project.repo_path} | topic={project.telegram_topic_id or 'pending'}")
+        if self_heal and heal_status is not None:
+            if heal_status.get("root_healed"):
+                print(f"  Self-healed controller wrapper: {heal_status['root_path']}")
+            if heal_status.get("healed_project_wrappers"):
+                preview = ", ".join(heal_status["healed_project_wrappers"][:3])
+                if len(heal_status["healed_project_wrappers"]) > 3:
+                    preview += f", +{len(heal_status['healed_project_wrappers']) - 3} more"
+                print(f"  Self-healed managed wrappers: {preview}")
     return 0
 
 
@@ -267,8 +286,9 @@ def cmd_telegram_sync(args: argparse.Namespace) -> int:
     state = load_state(config)
     sync_projects(config, state, dry_run=args.dry_run)
     self_heal = getattr(args, "self_heal", False)
+    heal_status = None
     if self_heal:
-        wrapper_contract_status(config, self_heal=True)
+        heal_status = wrapper_contract_status(config, self_heal=True)
     json_output = getattr(args, "json", False)
     offset = state.last_telegram_update_id + 1 if state.last_telegram_update_id else None
     if not json_output:
@@ -359,11 +379,13 @@ def cmd_telegram_sync(args: argparse.Namespace) -> int:
         "last_update_id": state.last_telegram_update_id,
         "timestamp": state.last_telegram_sync.timestamp,
     }
-    if self_heal:
-        wrapper_status = wrapper_contract_status(config)
+    if self_heal and heal_status is not None:
         sync_data["wrapper_contracts"] = {
-            "controller": "ok" if wrapper_status["root_ok"] else "drifted",
-            "managed": "ok" if wrapper_status["managed_ok"] else "drifted",
+            "controller": "ok" if heal_status["root_ok"] else "drifted",
+            "controller_healed": heal_status.get("root_healed", False),
+            "managed": "ok" if heal_status["managed_ok"] else "drifted",
+            "drifted_paths": heal_status["drifted_project_wrappers"],
+            "healed_paths": heal_status.get("healed_project_wrappers", []),
         }
     if getattr(args, "json", False):
         print(json.dumps(sync_data, ensure_ascii=False, indent=2))
@@ -433,7 +455,8 @@ def cmd_history(args: argparse.Namespace) -> int:
     project_slug = getattr(args, "project", None)
     limit = getattr(args, "limit", None)
     since = getattr(args, "since", None)
-    history_data = _history_data(state, project_slug=project_slug, limit=limit, since=since)
+    until = getattr(args, "until", None)
+    history_data = _history_data(state, project_slug=project_slug, limit=limit, since=since, until=until)
     if getattr(args, "json", False):
         print(json.dumps(history_data, ensure_ascii=False, indent=2))
     else:
@@ -441,10 +464,12 @@ def cmd_history(args: argparse.Namespace) -> int:
     return 0
 
 
-def _history_data(state, project_slug: str | None = None, limit: int | None = None, since: str | None = None) -> dict:
+def _history_data(state, project_slug: str | None = None, limit: int | None = None, since: str | None = None, until: str | None = None) -> dict:
     rounds = []
     for sync in reversed(state.telegram_sync_history):
         if since and sync.timestamp and sync.timestamp < since:
+            continue
+        if until and sync.timestamp and sync.timestamp > until:
             continue
         outcomes = sync.dispatch_outcomes
         if project_slug:
@@ -463,6 +488,7 @@ def _history_data(state, project_slug: str | None = None, limit: int | None = No
         "project_filter": project_slug,
         "limit": limit,
         "since": since,
+        "until": until,
         "rounds": rounds,
     }
 
@@ -491,6 +517,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--repos-root", default=None, help="Directory that contains managed repositories.")
     run_parser.add_argument("--dry-run", action="store_true", help="Do not create Telegram topics.")
     run_parser.add_argument("--format", choices=["text", "json"], default="text", help="Output format (default: text).")
+    run_parser.add_argument("--self-heal", action="store_true", help="Regenerate drifted wrappers before syncing projects.")
     run_parser.set_defaults(func=cmd_run)
 
     review_parser = sub.add_parser("review", help="Print a summary of managed repositories.")
@@ -530,6 +557,7 @@ def build_parser() -> argparse.ArgumentParser:
     history_parser.add_argument("--project", default=None, help="Filter outcomes to a specific project slug.")
     history_parser.add_argument("--limit", type=int, default=None, help="Maximum number of sync rounds to show.")
     history_parser.add_argument("--since", default=None, help="Only show rounds at or after this ISO timestamp.")
+    history_parser.add_argument("--until", default=None, help="Only show rounds at or before this ISO timestamp.")
     history_parser.add_argument("--json", action="store_true", help="Output machine-readable JSON.")
     history_parser.set_defaults(func=cmd_history)
 

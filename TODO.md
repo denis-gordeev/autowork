@@ -2,6 +2,14 @@
 
 ## Done
 
+- `run --self-heal` now regenerates drifted controller and managed wrappers before syncing projects, matching the `doctor --self-heal` and `review --self-heal` behavior so wrapper drift can be fixed from the run command as well.
+- `run --format json --self-heal` reports `controller_healed` and `healed_paths` in the machine-readable payload, so automated tooling can detect healing from the run surface.
+- `telegram-sync --json --self-heal` now includes `controller_healed`, `drifted_paths`, and `healed_paths` in the `wrapper_contracts` payload, so per-project wrapper healing details are visible in machine-readable output.
+- `history --until` now filters rounds to those at or before a given ISO timestamp, complementing `--since` for range queries.
+- `history --json` now includes `until` in the machine-readable payload for query transparency.
+- Regression coverage now guards `run --self-heal` (text and JSON), `telegram-sync --json --self-heal` per-project healing details, and `history --until` / `--since` + `--until` range filtering.
+- Restored the live controller-root `autowork.sh` to the documented portfolio-wide `telegram-sync -> run -> review` flow.
+
 - `review` now reports wrapper-contract health for both the tracked controller `autowork.sh` and discovered child wrappers, so unattended cron summaries expose wrapper drift without a separate `doctor` pass.
 - Per-repo `autowork.sh` now routes into controller-side `project-run` instead of invoking the full portfolio loop from inside child repositories.
 - The controller root `autowork.sh` keeps the portfolio-wide `telegram-sync -> run -> review` flow, so controller cron jobs still work while child wrappers stay repo-scoped.
@@ -61,6 +69,5 @@
 ## Next
 
 - Refresh `data/state.json` and generated child `autowork.sh` wrappers with a real controller run so live managed repos inherit the persisted cron minutes and current wrapper contract.
-- Consider adding a `--self-heal` flag to `run` so wrapper drift detected during project sync can be fixed inline (currently `sync_projects` self-heals the root wrapper only).
-- Consider adding a `--format json` alias to `telegram-sync --self-heal` that reports per-project wrapper healing details.
-- Consider adding `--until` flag to `history` for upper-bound timestamp filtering (complementing `--since`).
+- Consider adding a `--format json` alias to `telegram-sync --self-heal` that reports per-project wrapper healing details (now partially addressed: `--json --self-heal` includes `healed_paths` in `wrapper_contracts`).
+- Consider adding per-project granular healing in `telegram-sync --self-heal --json` that maps each healed path to its project slug.
