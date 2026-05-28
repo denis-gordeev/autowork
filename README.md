@@ -58,12 +58,15 @@ Notes:
 ```bash
 PYTHONPATH=src python3 -m repo_autowork.cli doctor
 PYTHONPATH=src python3 -m repo_autowork.cli run --dry-run
+PYTHONPATH=src python3 -m repo_autowork.cli run --format json
 PYTHONPATH=src python3 -m repo_autowork.cli review
 PYTHONPATH=src python3 -m repo_autowork.cli sync-crontab
 PYTHONPATH=src python3 -m repo_autowork.cli project-run --repo /Users/denis/programming/autowork/mcp-russia --dry-run
 PYTHONPATH=src python3 -m repo_autowork.cli telegram-sync
+PYTHONPATH=src python3 -m repo_autowork.cli telegram-sync --self-heal
 PYTHONPATH=src python3 -m repo_autowork.cli history
 PYTHONPATH=src python3 -m repo_autowork.cli history --project alpha --json
+PYTHONPATH=src python3 -m repo_autowork.cli history --limit 5 --since "2026-05-27T10:00:00+00:00"
 ./autowork.sh --dry-run
 pytest -q
 ```
@@ -119,13 +122,16 @@ pytest -q
 - `telegram-sync --json` now outputs a machine-readable JSON payload with handled/ignored counts, dispatch outcomes, last update ID, and timestamp.
 - Added a `history` CLI subcommand that exposes per-project dispatch outcome trends across recent Telegram sync rounds, with optional `--project` slug filtering and `--json` output.
 - Regression coverage now guards `review --self-heal` (text and JSON), `telegram-sync --json`, and the `history` subcommand (text, JSON, project filter, empty state).
+- `telegram-sync --self-heal` now regenerates drifted controller and managed wrappers before processing updates, matching the `doctor --self-heal` and `review --self-heal` behavior.
+- `telegram-sync --json --self-heal` reports `wrapper_contracts` in the machine-readable payload, so automated monitoring can confirm wrapper health after a self-healing sync round.
+- `history --limit` now restricts the number of sync rounds shown, and `history --since` filters rounds to those at or after a given ISO timestamp, enabling finer-grained trend queries.
+- `run --format json` now outputs a machine-readable JSON payload with synced project count and per-project details, matching the `review --json` and `doctor --format json` pattern for automated workflows.
 
 ### Next Iterations
 
 - Refresh persisted state and generated wrappers so older `state.json` entries and child repos pick up the new `cron_minute` + wrapper contract on the next real controller run.
-- Consider adding a `--self-heal` flag to `telegram-sync` so wrapper drift detected during sync can be fixed inline.
-- Consider adding `--limit` and `--since` flags to the `history` subcommand for finer-grained trend queries.
-- Consider adding a `--format json` alias to `run` for structured output during automated workflows.
+- Consider adding a `--self-heal` flag to `run` so wrapper drift detected during project sync can be fixed inline (currently `sync_projects` self-heals the root wrapper only).
+- Consider adding `--until` flag to `history` for upper-bound timestamp filtering (complementing `--since`).
 
 ## What `run` Does
 
