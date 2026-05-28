@@ -1658,6 +1658,174 @@ class CliFlowTests(unittest.TestCase):
             self.assertIn("2026-05-27T10:00:00+00:00", timestamps)
             self.assertIn("2026-05-27T12:00:00+00:00", timestamps)
 
+    def test_telegram_sync_self_heal_json_includes_per_project_healing_by_slug(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            controller_root = Path(tmp_dir) / "controller"
+            repos_root = Path(tmp_dir) / "managed"
+            controller_root.mkdir(parents=True)
+            repos_root.mkdir(parents=True)
+            repo_alpha = repos_root / "alpha"
+            repo_beta = repos_root / "beta"
+            for repo_dir in (repo_alpha, repo_beta):
+                repo_dir.mkdir(parents=True)
+                (repo_dir / ".git").mkdir()
+            (controller_root / "autowork.sh").write_text("# drifted\n", encoding="utf-8")
+            (repo_alpha / "autowork.sh").write_text("# drifted child\n", encoding="utf-8")
+            (repo_beta / "autowork.sh").write_text("# drifted child\n", encoding="utf-8")
+
+            config = build_config(controller_root, repos_root=str(repos_root))
+            project_alpha = ProjectRecord(
+                slug="alpha",
+                name="alpha",
+                repo_path=str(repo_alpha),
+                telegram_topic_id=42,
+                tg_folder=str(controller_root / "tg" / "alpha"),
+            )
+            project_beta = ProjectRecord(
+                slug="beta",
+                name="beta",
+                repo_path=str(repo_beta),
+                telegram_topic_id=77,
+                tg_folder=str(controller_root / "tg" / "beta"),
+            )
+            state = State(projects=[project_alpha, project_beta], last_telegram_update_id=99)
+            args = argparse.Namespace(repos_root=str(repos_root), timeout=0, dry_run=True, json=True, self_heal=True)
+            updates = [
+                {
+                    "update_id": 100,
+                    "message": {
+                        "message_id": 1,
+                        "chat": {"id": config.telegram_chat_id},
+                        "from": {"is_bot": False},
+                        "message_thread_id": 42,
+                        "text": "Do something",
+                    },
+                },
+            ]
+
+            stdout = io.StringIO()
+            with patch("repo_autowork.cli.build_config", return_value=config), patch(
+                "repo_autowork.cli.load_state", return_value=state
+            ), patch("repo_autowork.cli.sync_projects"), patch(
+                "repo_autowork.cli.get_updates", return_value=updates
+            ), patch("repo_autowork.cli.write_telegram_mirror", return_value=repo_alpha / "inbox" / "telegram" / "update-100.json"), patch(
+                "repo_autowork.cli._dispatch_telegram_message",
+                return_value=cli.subprocess.CompletedProcess(args=[], returncode=0, stdout="ok", stderr=""),
+            ), patch("repo_autowork.cli.save_state"), patch("sys.stdout", stdout):
+                result = cli.cmd_telegram_sync(args)
+
+            self.assertEqual(result, 0)
+            data = json.loads(stdout.getvalue())
+            self.assertIn("wrapper_contracts", data)
+            per_project = data["wrapper_contracts"]["per_project_healed"]
+            self.assertIn("alpha", per_project)
+            self.assertIn("beta", per_project)
+            self.assertTrue(any(str(repo_alpha / "autowork.sh") in p for p in per_project["alpha"]))
+            self.assertTrue(any(str(repo_beta / "autowork.sh") in p for p in per_project["beta"]))
+
+    def test_review_json_includes_per_project_drifted_mapping(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            controller_root = Path(tmp_dir) / "controller"
+            repos_root = Path(tmp_dir) / "managed"
+            controller_root.mkdir(parents=True)
+            repos_root.mkdir(parents=True)
+            repo_alpha = repos_root / "alpha"
+            repo_beta = repos_root / "beta"
+            for repo_dir in (repo_alpha, repo_beta):
+                repo_dir.mkdir(parents=True)
+                (repo_dir / ".git").mkdir()
+            (controller_root / "autowork.sh").write_text(cli.render_root_autowork(config=build_config(controller_root, repos_root=str(repos_root))), encoding="utf-8")
+            (repo_alpha / "autowork.sh").write_text("# drifted child\n", encoding="utf-8")
+            (repo_beta / "autowork.sh").write_text("# drifted child\n", encoding="utf-8")
+
+            config = build_config(controller_root, repos_root=str(repos_root))
+            state = State(
+                projects=[
+                    ProjectRecord(slug="alpha", name="alpha", repo_path=str(repo_alpha), current_branch="main", default_branch="main"),
+                    ProjectRecord(slug="beta", name="beta", repo_path=str(repo_beta), current_branch="main", default_branch="main"),
+                ]
+            )
+            stdout = io.StringIO()
+
+            with patch("repo_autowork.cli.build_config", return_value=config), patch(
+                "repo_autowork.cli.load_state", return_value=state
+            ), patch("repo_autowork.cli.sync_projects"), patch(
+                "sys.argv", ["repo-autowork", "review", "--repos-root", str(repos_root), "--dry-run", "--json"]
+            ), patch("sys.stdout", stdout):
+                exit_code = cli.main()
+
+            self.assertEqual(exit_code, 0)
+            data = json.loads(stdout.getvalue())
+            per_project_drifted = data["wrapper_contracts"]["per_project_drifted"]
+            self.assertIn("alpha", per_project_drifted)
+            self.assertIn("beta", per_project_drifted)
+            self.assertTrue(any(str(repo_alpha / "autowork.sh") in p for p in per_project_drifted["alpha"]))
+
+    def test_doctor_json_includes_per_project_healed_mapping(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            controller_root = Path(tmp_dir) / "controller"
+            repos_root = Path(tmp_dir) / "managed"
+            controller_root.mkdir(parents=True)
+            repos_root.mkdir(parents=True)
+            repo_alpha = repos_root / "alpha"
+            repo_alpha.mkdir(parents=True)
+            (repo_alpha / ".git").mkdir()
+            (controller_root / "autowork.sh").write_text("# drifted\n", encoding="utf-8")
+            (repo_alpha / "autowork.sh").write_text("# drifted child\n", encoding="utf-8")
+
+            config = build_config(controller_root, repos_root=str(repos_root))
+            state = State(
+                projects=[
+                    ProjectRecord(slug="alpha", name="alpha", repo_path=str(repo_alpha)),
+                ]
+            )
+            stdout = io.StringIO()
+
+            with patch("repo_autowork.cli.build_config", return_value=config), patch(
+                "repo_autowork.cli.load_state", return_value=state
+            ), patch("sys.argv", ["repo-autowork", "doctor", "--repos-root", str(repos_root), "--format", "json", "--self-heal"]
+            ), patch("sys.stdout", stdout):
+                exit_code = cli.main()
+
+            self.assertEqual(exit_code, 0)
+            data = json.loads(stdout.getvalue())
+            per_project = data["wrapper_contracts"]["per_project_healed"]
+            self.assertIn("alpha", per_project)
+
+    def test_run_self_heal_json_includes_per_project_healed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            controller_root = Path(tmp_dir) / "controller"
+            repos_root = Path(tmp_dir) / "managed"
+            controller_root.mkdir(parents=True)
+            repos_root.mkdir(parents=True)
+            repo_dir = repos_root / "alpha"
+            repo_dir.mkdir(parents=True)
+            (repo_dir / ".git").mkdir()
+            (controller_root / "autowork.sh").write_text("# drifted\n", encoding="utf-8")
+            (repo_dir / "autowork.sh").write_text("# drifted child\n", encoding="utf-8")
+
+            config = build_config(controller_root, repos_root=str(repos_root))
+            projects = [
+                ProjectRecord(slug="alpha", name="alpha", repo_path=str(repo_dir)),
+            ]
+            state = State(projects=projects)
+            stdout = io.StringIO()
+
+            with patch("repo_autowork.cli.build_config", return_value=config), patch(
+                "repo_autowork.cli.load_state", return_value=state
+            ), patch("repo_autowork.cli.sync_projects", return_value=projects), patch(
+                "repo_autowork.cli.safe_sync_crontab"
+            ), patch("sys.argv", ["repo-autowork", "run", "--repos-root", str(repos_root), "--dry-run", "--format", "json", "--self-heal"]), patch(
+                "sys.stdout", stdout
+            ):
+                exit_code = cli.main()
+
+            self.assertEqual(exit_code, 0)
+            data = json.loads(stdout.getvalue())
+            self.assertIn("wrapper_contracts", data)
+            self.assertIn("per_project_healed", data["wrapper_contracts"])
+            self.assertIn("alpha", data["wrapper_contracts"]["per_project_healed"])
+
 
 if __name__ == "__main__":
     unittest.main()

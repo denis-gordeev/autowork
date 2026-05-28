@@ -135,11 +135,15 @@ pytest -q
 - `history --until` now filters rounds to those at or before a given ISO timestamp, complementing `--since` for range queries.
 - `history --json` now includes `until` in the machine-readable payload for query transparency.
 - Regression coverage now guards `run --self-heal` (text and JSON), `telegram-sync --json --self-heal` per-project healing details, and `history --until` / `--since` + `--until` range filtering.
+- Per-project granular healing is now available in all JSON output surfaces: `telegram-sync --self-heal --json`, `review --json`, `doctor --format json --self-heal`, and `run --format json --self-heal` now include `per_project_healed` and `per_project_drifted` mappings that associate each healed or drifted wrapper path with its project slug.
+- `wrapper_contract_status` now accepts an optional `state` parameter so discovered repo directories can be resolved to their project slug for per-project healing/drift tracking.
+- Restored the live controller-root `autowork.sh` to the documented portfolio-wide `telegram-sync -> run -> review` flow.
+- Regression coverage now guards per-project healing mappings in `telegram-sync --self-heal --json`, `review --json`, `doctor --format json --self-heal`, and `run --format json --self-heal`.
 
 ### Next Iterations
 
 - Refresh persisted state and generated wrappers so older `state.json` entries and child repos pick up the new `cron_minute` + wrapper contract on the next real controller run.
-- Consider adding per-project granular healing in `telegram-sync --self-heal --json` that maps each healed path to its project slug.
+- Consider adding a `project-run --format json` output that exposes the generated prompt and dispatch metadata in machine-readable form.
 
 ## What `run` Does
 

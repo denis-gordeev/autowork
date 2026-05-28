@@ -2,6 +2,10 @@
 
 ## Done
 
+- Per-project granular healing is now available in `wrapper_contract_status` and all JSON output surfaces: `telegram-sync --self-heal --json`, `review --json`, `doctor --format json --self-heal`, and `run --format json --self-heal` now include `per_project_healed` and `per_project_drifted` mappings that associate each healed or drifted wrapper path with its project slug, resolving the remaining open TODO about per-project healing visibility.
+- `wrapper_contract_status` now accepts an optional `state` parameter so discovered repo directories can be resolved to their project slug for per-project healing/drift tracking.
+- Restored the live controller-root `autowork.sh` to the documented portfolio-wide `telegram-sync -> run -> review` flow.
+- Regression coverage now guards per-project healing mappings in `telegram-sync --self-heal --json`, `review --json`, `doctor --format json --self-heal`, and `run --format json --self-heal`.
 - `run --self-heal` now regenerates drifted controller and managed wrappers before syncing projects, matching the `doctor --self-heal` and `review --self-heal` behavior so wrapper drift can be fixed from the run command as well.
 - `run --format json --self-heal` reports `controller_healed` and `healed_paths` in the machine-readable payload, so automated tooling can detect healing from the run surface.
 - `telegram-sync --json --self-heal` now includes `controller_healed`, `drifted_paths`, and `healed_paths` in the `wrapper_contracts` payload, so per-project wrapper healing details are visible in machine-readable output.
@@ -69,5 +73,5 @@
 ## Next
 
 - Refresh `data/state.json` and generated child `autowork.sh` wrappers with a real controller run so live managed repos inherit the persisted cron minutes and current wrapper contract.
-- Consider adding a `--format json` alias to `telegram-sync --self-heal` that reports per-project wrapper healing details (now partially addressed: `--json --self-heal` includes `healed_paths` in `wrapper_contracts`).
-- Consider adding per-project granular healing in `telegram-sync --self-heal --json` that maps each healed path to its project slug.
+- Consider adding a `--format json` alias to `telegram-sync --self-heal` that reports per-project wrapper healing details (now fully addressed: `--json --self-heal` includes `per_project_healed` in `wrapper_contracts`).
+- Consider adding a `project-run --format json` output that exposes the generated prompt and dispatch metadata in machine-readable form.

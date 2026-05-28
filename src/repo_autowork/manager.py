@@ -256,7 +256,7 @@ def ensure_project_topic(config: Config, project: ProjectRecord, dry_run: bool =
         project.notes.append(f"Telegram setup failed: {exc}")
 
 
-def wrapper_contract_status(config: Config, self_heal: bool = False) -> dict[str, object]:
+def wrapper_contract_status(config: Config, self_heal: bool = False, state: State | None = None) -> dict[str, object]:
     root_wrapper_path = config.project_root / "autowork.sh"
     root_wrapper_expected = render_root_autowork(config)
     root_wrapper_ok = root_wrapper_path.exists() and root_wrapper_path.read_text(encoding="utf-8") == root_wrapper_expected
@@ -271,23 +271,35 @@ def wrapper_contract_status(config: Config, self_heal: bool = False) -> dict[str
     discovered_repos = [repo_dir for repo_dir in discover_repo_dirs(config) if repo_dir.resolve() != config.project_root.resolve()]
     drifted_project_wrappers: list[str] = []
     healed_project_wrappers: list[str] = []
+    per_project_healed: dict[str, list[str]] = {}
+    per_project_drifted: dict[str, list[str]] = {}
+    slug_by_repo_path: dict[str, str] = {}
+    if state is not None:
+        for project in state.projects:
+            slug_by_repo_path[str(Path(project.repo_path).resolve())] = project.slug
     for repo_dir in discovered_repos:
         wrapper_path = repo_dir / "autowork.sh"
+        repo_key = str(repo_dir.resolve())
+        slug = slug_by_repo_path.get(repo_key, repo_dir.name)
         if not wrapper_path.exists():
             if self_heal:
                 wrapper_path.write_text(expected_project_wrapper, encoding="utf-8")
                 wrapper_path.chmod(0o755)
                 healed_project_wrappers.append(str(wrapper_path))
+                per_project_healed.setdefault(slug, []).append(str(wrapper_path))
             else:
                 drifted_project_wrappers.append(str(wrapper_path))
+                per_project_drifted.setdefault(slug, []).append(str(wrapper_path))
             continue
         if wrapper_path.read_text(encoding="utf-8") != expected_project_wrapper:
             if self_heal:
                 wrapper_path.write_text(expected_project_wrapper, encoding="utf-8")
                 wrapper_path.chmod(0o755)
                 healed_project_wrappers.append(str(wrapper_path))
+                per_project_healed.setdefault(slug, []).append(str(wrapper_path))
             else:
                 drifted_project_wrappers.append(str(wrapper_path))
+                per_project_drifted.setdefault(slug, []).append(str(wrapper_path))
 
     if drifted_project_wrappers:
         preview = ", ".join(drifted_project_wrappers[:3])
@@ -310,6 +322,8 @@ def wrapper_contract_status(config: Config, self_heal: bool = False) -> dict[str
         "managed_detail": managed_detail,
         "drifted_project_wrappers": drifted_project_wrappers,
         "healed_project_wrappers": healed_project_wrappers,
+        "per_project_healed": per_project_healed,
+        "per_project_drifted": per_project_drifted,
         "managed_repo_count": len(discovered_repos),
     }
 
@@ -453,7 +467,7 @@ def send_project_update(config: Config, project: ProjectRecord, text: str, dry_r
 
 
 def review_summary(config: Config, state: State, self_heal: bool = False) -> str:
-    wrapper_status = wrapper_contract_status(config, self_heal=self_heal)
+    wrapper_status = wrapper_contract_status(config, self_heal=self_heal, state=state)
     lines = [
         f"Controller repo: {config.project_root}",
         f"Managed repos root: {config.repos_root}",

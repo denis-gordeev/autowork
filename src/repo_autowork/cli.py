@@ -72,8 +72,8 @@ def safe_sync_crontab(config, state) -> None:
         print(f"Warning: failed to sync crontab: {exc}", file=sys.stderr)
 
 
-def doctor_checks(config, self_heal: bool = False) -> list[tuple[str, bool, str]]:
-    wrapper_status = wrapper_contract_status(config, self_heal=self_heal)
+def doctor_checks(config, self_heal: bool = False, state: State | None = None) -> list[tuple[str, bool, str]]:
+    wrapper_status = wrapper_contract_status(config, self_heal=self_heal, state=state)
     guaranteed_env_keys = "AUTOWORK_CONTROLLER_ROOT, AUTOWORK_PROJECT_SLUG, TG_TOPIC_ID, AUTOWORK_TG_DIR"
     root_label = "Controller wrapper contract (healed)" if wrapper_status.get("root_healed") else "Controller wrapper contract"
     managed_label = "Managed wrapper contracts (healed)" if wrapper_status.get("healed_project_wrappers") else "Managed wrapper contracts"
@@ -90,8 +90,8 @@ def doctor_checks(config, self_heal: bool = False) -> list[tuple[str, bool, str]
     ]
 
 
-def doctor_summary(config, self_heal: bool = False) -> str:
-    checks = doctor_checks(config, self_heal=self_heal)
+def doctor_summary(config, self_heal: bool = False, state: State | None = None) -> str:
+    checks = doctor_checks(config, self_heal=self_heal, state=state)
     lines = []
     for label, ok, detail in checks:
         lines.append(f"{'OK' if ok else 'MISSING'}: {label} ({detail})")
@@ -104,7 +104,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     self_heal = getattr(args, "self_heal", False)
     heal_status = None
     if self_heal:
-        heal_status = wrapper_contract_status(config, self_heal=True)
+        heal_status = wrapper_contract_status(config, self_heal=True, state=state)
     projects = sync_projects(config, state, dry_run=args.dry_run)
     safe_sync_crontab(config, state)
     if getattr(args, "format", None) == "json":
@@ -126,6 +126,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 "controller_healed": heal_status.get("root_healed", False),
                 "managed": "ok" if heal_status["managed_ok"] else "drifted",
                 "healed_paths": heal_status.get("healed_project_wrappers", []),
+                "per_project_healed": heal_status.get("per_project_healed", {}),
             }
         print(json.dumps(run_data, ensure_ascii=False, indent=2))
     else:
@@ -157,7 +158,7 @@ def cmd_review(args: argparse.Namespace) -> int:
 
 
 def _review_data(config, state, self_heal: bool = False) -> dict:
-    wrapper_status = wrapper_contract_status(config, self_heal=self_heal)
+    wrapper_status = wrapper_contract_status(config, self_heal=self_heal, state=state)
     return {
         "controller_root": str(config.project_root),
         "repos_root": str(config.repos_root),
@@ -169,6 +170,8 @@ def _review_data(config, state, self_heal: bool = False) -> dict:
             "managed": "ok" if wrapper_status["managed_ok"] else "drifted",
             "drifted_paths": wrapper_status["drifted_project_wrappers"],
             "healed_paths": wrapper_status.get("healed_project_wrappers", []),
+            "per_project_healed": wrapper_status.get("per_project_healed", {}),
+            "per_project_drifted": wrapper_status.get("per_project_drifted", {}),
         },
         "projects": [
             {
@@ -288,7 +291,7 @@ def cmd_telegram_sync(args: argparse.Namespace) -> int:
     self_heal = getattr(args, "self_heal", False)
     heal_status = None
     if self_heal:
-        heal_status = wrapper_contract_status(config, self_heal=True)
+        heal_status = wrapper_contract_status(config, self_heal=True, state=state)
     json_output = getattr(args, "json", False)
     offset = state.last_telegram_update_id + 1 if state.last_telegram_update_id else None
     if not json_output:
@@ -386,6 +389,8 @@ def cmd_telegram_sync(args: argparse.Namespace) -> int:
             "managed": "ok" if heal_status["managed_ok"] else "drifted",
             "drifted_paths": heal_status["drifted_project_wrappers"],
             "healed_paths": heal_status.get("healed_project_wrappers", []),
+            "per_project_healed": heal_status.get("per_project_healed", {}),
+            "per_project_drifted": heal_status.get("per_project_drifted", {}),
         }
     if getattr(args, "json", False):
         print(json.dumps(sync_data, ensure_ascii=False, indent=2))
@@ -414,6 +419,8 @@ def _doctor_data(config, self_heal: bool = False, wrapper_status: dict | None = 
             "managed": "ok" if wrapper_status["managed_ok"] else "drifted",
             "drifted_paths": wrapper_status["drifted_project_wrappers"],
             "healed_paths": wrapper_status.get("healed_project_wrappers", []),
+            "per_project_healed": wrapper_status.get("per_project_healed", {}),
+            "per_project_drifted": wrapper_status.get("per_project_drifted", {}),
         },
     }
 
@@ -421,8 +428,9 @@ def _doctor_data(config, self_heal: bool = False, wrapper_status: dict | None = 
 def cmd_doctor(args: argparse.Namespace) -> int:
     config = build_config(Path.cwd(), repos_root=args.repos_root)
     self_heal = getattr(args, "self_heal", False)
-    wrapper_status = wrapper_contract_status(config, self_heal=self_heal)
-    checks = doctor_checks(config, self_heal=self_heal)
+    state = load_state(config)
+    wrapper_status = wrapper_contract_status(config, self_heal=self_heal, state=state)
+    checks = doctor_checks(config, self_heal=self_heal, state=state)
     if getattr(args, "format", None) == "json":
         print(json.dumps(_doctor_data(config, self_heal=self_heal, wrapper_status=wrapper_status), ensure_ascii=False, indent=2))
     else:
