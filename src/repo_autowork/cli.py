@@ -219,6 +219,10 @@ def cmd_project_run(args: argparse.Namespace) -> int:
     config = build_config(Path.cwd(), repos_root=args.repos_root)
     state = load_state(config)
     sync_projects(config, state, dry_run=args.dry_run)
+    self_heal = getattr(args, "self_heal", False)
+    heal_status = None
+    if self_heal:
+        heal_status = wrapper_contract_status(config, self_heal=True, state=state)
     project = _find_project(state, Path(args.repo))
     if project is None:
         print(f"Repository is not managed: {args.repo}", file=sys.stderr)
@@ -243,8 +247,25 @@ def cmd_project_run(args: argparse.Namespace) -> int:
             "stdout": result.stdout,
             "stderr": result.stderr,
         }
+        if self_heal and heal_status is not None:
+            run_data["wrapper_contracts"] = {
+                "controller": "ok" if heal_status["root_ok"] else "drifted",
+                "controller_healed": heal_status.get("root_healed", False),
+                "managed": "ok" if heal_status["managed_ok"] else "drifted",
+                "healed_paths": heal_status.get("healed_project_wrappers", []),
+                "per_project_healed": heal_status.get("per_project_healed", {}),
+                "per_project_drifted": heal_status.get("per_project_drifted", {}),
+            }
         print(json.dumps(run_data, ensure_ascii=False, indent=2))
     else:
+        if self_heal and heal_status is not None:
+            if heal_status.get("root_healed"):
+                print(f"Self-healed controller wrapper: {heal_status['root_path']}")
+            if heal_status.get("healed_project_wrappers"):
+                preview = ", ".join(heal_status["healed_project_wrappers"][:3])
+                if len(heal_status["healed_project_wrappers"]) > 3:
+                    preview += f", +{len(heal_status['healed_project_wrappers']) - 3} more"
+                print(f"Self-healed managed wrappers: {preview}")
         if result.stdout:
             print(result.stdout.strip())
         if result.stderr:
@@ -564,6 +585,7 @@ def build_parser() -> argparse.ArgumentParser:
     project_parser.add_argument("--repos-root", default=None, help="Directory that contains managed repositories.")
     project_parser.add_argument("--dry-run", action="store_true", help="Print the generated prompt instead of executing the base command.")
     project_parser.add_argument("--format", choices=["text", "json"], default="text", help="Output format (default: text).")
+    project_parser.add_argument("--self-heal", action="store_true", help="Regenerate drifted wrappers before running the project.")
     project_parser.set_defaults(func=cmd_project_run)
 
     telegram_parser = sub.add_parser("telegram-sync", help="Pull Telegram topic messages and dispatch them to project chats.")

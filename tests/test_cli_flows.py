@@ -1925,6 +1925,147 @@ class CliFlowTests(unittest.TestCase):
             self.assertEqual(data["stderr"], "command failed")
             self.assertFalse(data["dry_run"])
 
+    def test_project_run_self_heal_regenerates_drifted_wrappers(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            controller_root = Path(tmp_dir) / "controller"
+            repos_root = Path(tmp_dir) / "managed"
+            controller_root.mkdir(parents=True)
+            repos_root.mkdir(parents=True)
+            repo_dir = repos_root / "alpha"
+            repo_dir.mkdir(parents=True)
+            (repo_dir / ".git").mkdir()
+            (controller_root / "autowork.sh").write_text("# drifted\n", encoding="utf-8")
+            (repo_dir / "autowork.sh").write_text("# drifted child\n", encoding="utf-8")
+
+            config = build_config(controller_root, repos_root=str(repos_root))
+            project = ProjectRecord(
+                slug="alpha",
+                name="alpha",
+                repo_path=str(repo_dir),
+                current_branch="main",
+                default_branch="main",
+                tg_folder=str(controller_root / "tg" / "alpha"),
+            )
+            state = State(projects=[project])
+
+            fake_result = ProjectRunResult(prompt="prompt", returncode=0, stdout="ok", stderr="")
+            stdout = io.StringIO()
+
+            with patch("repo_autowork.cli.build_config", return_value=config), patch(
+                "repo_autowork.cli.load_state", return_value=state
+            ), patch("repo_autowork.cli.sync_projects"), patch(
+                "repo_autowork.cli.project_run_once", return_value=fake_result
+            ), patch("repo_autowork.cli.save_state"), patch(
+                "sys.argv", ["repo-autowork", "project-run", "--repo", str(repo_dir), "--repos-root", str(repos_root), "--dry-run", "--self-heal"]
+            ), patch("sys.stdout", stdout):
+                exit_code = cli.main()
+
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(
+                (controller_root / "autowork.sh").read_text(encoding="utf-8"),
+                cli.render_root_autowork(config),
+            )
+            self.assertEqual(
+                (repo_dir / "autowork.sh").read_text(encoding="utf-8"),
+                cli.render_project_autowork(config),
+            )
+            rendered = stdout.getvalue()
+            self.assertIn("healed", rendered.lower())
+
+    def test_project_run_self_heal_json_reports_wrapper_contracts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            controller_root = Path(tmp_dir) / "controller"
+            repos_root = Path(tmp_dir) / "managed"
+            controller_root.mkdir(parents=True)
+            repos_root.mkdir(parents=True)
+            repo_dir = repos_root / "alpha"
+            repo_dir.mkdir(parents=True)
+            (repo_dir / ".git").mkdir()
+            (controller_root / "autowork.sh").write_text("# drifted\n", encoding="utf-8")
+            (repo_dir / "autowork.sh").write_text("# drifted child\n", encoding="utf-8")
+
+            config = build_config(controller_root, repos_root=str(repos_root))
+            project = ProjectRecord(
+                slug="alpha",
+                name="alpha",
+                repo_path=str(repo_dir),
+                current_branch="main",
+                default_branch="main",
+                tg_folder=str(controller_root / "tg" / "alpha"),
+            )
+            state = State(projects=[project])
+
+            fake_result = ProjectRunResult(prompt="prompt", returncode=0, stdout="ok", stderr="")
+            stdout = io.StringIO()
+
+            with patch("repo_autowork.cli.build_config", return_value=config), patch(
+                "repo_autowork.cli.load_state", return_value=state
+            ), patch("repo_autowork.cli.sync_projects"), patch(
+                "repo_autowork.cli.project_run_once", return_value=fake_result
+            ), patch("repo_autowork.cli.save_state"), patch(
+                "sys.argv", ["repo-autowork", "project-run", "--repo", str(repo_dir), "--repos-root", str(repos_root), "--dry-run", "--format", "json", "--self-heal"]
+            ), patch("sys.stdout", stdout):
+                exit_code = cli.main()
+
+            self.assertEqual(exit_code, 0)
+            data = json.loads(stdout.getvalue())
+            self.assertIn("wrapper_contracts", data)
+            self.assertTrue(data["wrapper_contracts"]["controller_healed"])
+            self.assertTrue(len(data["wrapper_contracts"]["healed_paths"]) > 0)
+            self.assertIn("per_project_healed", data["wrapper_contracts"])
+
+    def test_project_run_self_heal_json_includes_per_project_healed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            controller_root = Path(tmp_dir) / "controller"
+            repos_root = Path(tmp_dir) / "managed"
+            controller_root.mkdir(parents=True)
+            repos_root.mkdir(parents=True)
+            repo_alpha = repos_root / "alpha"
+            repo_beta = repos_root / "beta"
+            for repo_dir in (repo_alpha, repo_beta):
+                repo_dir.mkdir(parents=True)
+                (repo_dir / ".git").mkdir()
+            (controller_root / "autowork.sh").write_text("# drifted\n", encoding="utf-8")
+            (repo_alpha / "autowork.sh").write_text("# drifted child\n", encoding="utf-8")
+            (repo_beta / "autowork.sh").write_text("# drifted child\n", encoding="utf-8")
+
+            config = build_config(controller_root, repos_root=str(repos_root))
+            project_alpha = ProjectRecord(
+                slug="alpha",
+                name="alpha",
+                repo_path=str(repo_alpha),
+                current_branch="main",
+                default_branch="main",
+                tg_folder=str(controller_root / "tg" / "alpha"),
+            )
+            project_beta = ProjectRecord(
+                slug="beta",
+                name="beta",
+                repo_path=str(repo_beta),
+                current_branch="main",
+                default_branch="main",
+                tg_folder=str(controller_root / "tg" / "beta"),
+            )
+            state = State(projects=[project_alpha, project_beta])
+
+            fake_result = ProjectRunResult(prompt="prompt", returncode=0, stdout="ok", stderr="")
+            stdout = io.StringIO()
+
+            with patch("repo_autowork.cli.build_config", return_value=config), patch(
+                "repo_autowork.cli.load_state", return_value=state
+            ), patch("repo_autowork.cli.sync_projects"), patch(
+                "repo_autowork.cli.project_run_once", return_value=fake_result
+            ), patch("repo_autowork.cli.save_state"), patch(
+                "sys.argv", ["repo-autowork", "project-run", "--repo", str(repo_alpha), "--repos-root", str(repos_root), "--dry-run", "--format", "json", "--self-heal"]
+            ), patch("sys.stdout", stdout):
+                exit_code = cli.main()
+
+            self.assertEqual(exit_code, 0)
+            data = json.loads(stdout.getvalue())
+            per_project = data["wrapper_contracts"]["per_project_healed"]
+            self.assertIn("alpha", per_project)
+            self.assertIn("beta", per_project)
+
 
 if __name__ == "__main__":
     unittest.main()
