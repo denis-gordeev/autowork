@@ -125,8 +125,10 @@ def cmd_run(args: argparse.Namespace) -> int:
                 "controller": "ok" if heal_status["root_ok"] else "drifted",
                 "controller_healed": heal_status.get("root_healed", False),
                 "managed": "ok" if heal_status["managed_ok"] else "drifted",
+                "drifted_paths": heal_status.get("drifted_project_wrappers", []),
                 "healed_paths": heal_status.get("healed_project_wrappers", []),
                 "per_project_healed": heal_status.get("per_project_healed", {}),
+                "per_project_drifted": heal_status.get("per_project_drifted", {}),
             }
         print(json.dumps(run_data, ensure_ascii=False, indent=2))
     else:
@@ -252,6 +254,7 @@ def cmd_project_run(args: argparse.Namespace) -> int:
                 "controller": "ok" if heal_status["root_ok"] else "drifted",
                 "controller_healed": heal_status.get("root_healed", False),
                 "managed": "ok" if heal_status["managed_ok"] else "drifted",
+                "drifted_paths": heal_status.get("drifted_project_wrappers", []),
                 "healed_paths": heal_status.get("healed_project_wrappers", []),
                 "per_project_healed": heal_status.get("per_project_healed", {}),
                 "per_project_drifted": heal_status.get("per_project_drifted", {}),

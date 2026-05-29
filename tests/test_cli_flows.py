@@ -1549,6 +1549,8 @@ class CliFlowTests(unittest.TestCase):
             self.assertIn("wrapper_contracts", data)
             self.assertTrue(data["wrapper_contracts"]["controller_healed"])
             self.assertTrue(len(data["wrapper_contracts"]["healed_paths"]) > 0)
+            self.assertIn("drifted_paths", data["wrapper_contracts"])
+            self.assertIn("per_project_drifted", data["wrapper_contracts"])
 
     def test_telegram_sync_self_heal_json_includes_per_project_healing_details(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1825,6 +1827,7 @@ class CliFlowTests(unittest.TestCase):
             self.assertIn("wrapper_contracts", data)
             self.assertIn("per_project_healed", data["wrapper_contracts"])
             self.assertIn("alpha", data["wrapper_contracts"]["per_project_healed"])
+            self.assertIn("per_project_drifted", data["wrapper_contracts"])
 
     def test_project_run_format_json_outputs_machine_readable_data(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -2013,6 +2016,8 @@ class CliFlowTests(unittest.TestCase):
             self.assertTrue(data["wrapper_contracts"]["controller_healed"])
             self.assertTrue(len(data["wrapper_contracts"]["healed_paths"]) > 0)
             self.assertIn("per_project_healed", data["wrapper_contracts"])
+            self.assertIn("drifted_paths", data["wrapper_contracts"])
+            self.assertIn("per_project_drifted", data["wrapper_contracts"])
 
     def test_project_run_self_heal_json_includes_per_project_healed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

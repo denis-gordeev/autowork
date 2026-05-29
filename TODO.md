@@ -80,8 +80,14 @@
 - `run --format json` now outputs a machine-readable JSON payload with synced project count and per-project details, matching the `review --json` and `doctor --format json` pattern for automated workflows.
 - Regression coverage now guards `telegram-sync --self-heal` (wrapper regeneration and JSON output), `history --limit` / `--since`, and `run --format json`.
 
+- Fixed the recurring controller-wrapper drift bug: `sync_projects` now calls `ensure_root_wrapper` after all `ensure_project_files` calls, so the controller root `autowork.sh` is not silently overwritten with the child-only `project-run` wrapper when `AUTOWORK_INCLUDE_CONTROLLER=1`.
+- Removed the redundant second `ensure_project_record` call in `sync_projects` that caused duplicate snapshot reads for every discovered project.
+- Normalized `wrapper_contracts` JSON fields across all self-heal surfaces: `run --format json --self-heal` and `project-run --format json --self-heal` now include `drifted_paths` and `per_project_drifted`, matching the `review --json`, `doctor --format json --self-heal`, and `telegram-sync --json --self-heal` payloads.
+- Added regression coverage that verifies the controller wrapper stays intact after `sync_projects` runs with `AUTOWORK_INCLUDE_CONTROLLER=1`.
+- Restored the live controller-root `autowork.sh` to the documented portfolio-wide `telegram-sync -> run -> review` flow.
+
 ## Next
 
 - Refresh `data/state.json` and generated child `autowork.sh` wrappers with a real controller run so live managed repos inherit the persisted cron minutes and current wrapper contract.
-- Consider adding a `--format json` alias to `telegram-sync --self-heal` that reports per-project wrapper healing details (now fully addressed: `--json --self-heal` includes `per_project_healed` in `wrapper_contracts`).
-- ~~Consider adding `--self-heal` to `project-run` so wrapper drift can be fixed from the single-project surface as well.~~ (Done)
+- Resolve GitHub authentication (`gh auth login`) so the controller can discover open issues and PRs for managed repositories.
+- Consider adding `--dry-run` semantics to `sync_projects` that skip local file writes and state persistence, so `review --dry-run` has no side effects on disk.

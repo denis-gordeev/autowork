@@ -187,6 +187,34 @@ class RuntimeConfigTests(unittest.TestCase):
             self.assertFalse(healed)
             self.assertEqual(root_wrapper.read_text(encoding="utf-8"), render_root_autowork(config))
 
+    def test_sync_projects_preserves_controller_wrapper_when_controller_is_managed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "controller"
+            repos_root = Path(tmp_dir)
+            root.mkdir(parents=True)
+            (root / ".git").mkdir()
+
+            original_include = os.environ.get("AUTOWORK_INCLUDE_CONTROLLER")
+            try:
+                os.environ["AUTOWORK_INCLUDE_CONTROLLER"] = "1"
+                config = build_config(root, repos_root=str(repos_root))
+
+                from repo_autowork.manager import load_state, save_state, sync_projects
+
+                state = load_state(config)
+                sync_projects(config, state, dry_run=True)
+
+                root_wrapper = (root / "autowork.sh").read_text(encoding="utf-8")
+                self.assertEqual(root_wrapper, render_root_autowork(config))
+                self.assertIn('telegram-sync "$@"', root_wrapper)
+                self.assertIn('run "$@"', root_wrapper)
+                self.assertIn('review "$@"', root_wrapper)
+            finally:
+                if original_include is None:
+                    os.environ.pop("AUTOWORK_INCLUDE_CONTROLLER", None)
+                else:
+                    os.environ["AUTOWORK_INCLUDE_CONTROLLER"] = original_include
+
 
 if __name__ == "__main__":
     unittest.main()

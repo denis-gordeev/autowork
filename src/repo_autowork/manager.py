@@ -329,21 +329,19 @@ def wrapper_contract_status(config: Config, self_heal: bool = False, state: Stat
 
 
 def sync_projects(config: Config, state: State, dry_run: bool = False) -> list[ProjectRecord]:
-    ensure_root_wrapper(config)
     active_paths = {str(path.resolve()) for path in discover_repo_dirs(config)}
     retained: list[ProjectRecord] = []
-    known = {str(Path(project.repo_path).resolve()): project for project in state.projects}
     for repo_dir_str in sorted(active_paths):
         repo_dir = Path(repo_dir_str)
-        project = known.get(repo_dir_str) or ensure_project_record(config, state, repo_dir)
+        project = ensure_project_record(config, state, repo_dir)
         if project not in state.projects:
             state.projects.append(project)
-        project = ensure_project_record(config, state, repo_dir)
         ensure_project_topic(config, project, dry_run=dry_run)
         ensure_project_files(config, project)
         retained.append(project)
     state.projects = retained
     assign_project_cron_minutes(state.projects)
+    ensure_root_wrapper(config)
     save_state(config, state)
     return retained
 

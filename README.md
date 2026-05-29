@@ -146,10 +146,15 @@ pytest -q
 - `project-run --format json --self-heal` reports `wrapper_contracts` with `controller_healed`, `healed_paths`, `per_project_healed`, and `per_project_drifted` in the machine-readable payload, so automated tooling can detect healing from the project-run surface.
 - Regression coverage now guards `project-run --self-heal` (text and JSON) including per-project healing mappings.
 - Restored the live controller-root `autowork.sh` to the documented portfolio-wide `telegram-sync -> run -> review` flow.
+- Fixed the controller-wrapper drift bug: `sync_projects` now calls `ensure_root_wrapper` after all `ensure_project_files` calls, preventing the child-only `project-run` wrapper from silently overwriting the portfolio-wide controller wrapper when `AUTOWORK_INCLUDE_CONTROLLER=1`.
+- Normalized `wrapper_contracts` JSON fields across all self-heal surfaces: `run --format json --self-heal` and `project-run --format json --self-heal` now include `drifted_paths` and `per_project_drifted`.
+- Removed the redundant `ensure_project_record` call in `sync_projects`.
+- Added regression coverage for controller-wrapper integrity under `AUTOWORK_INCLUDE_CONTROLLER=1`.
 
 ### Next Iterations
 
 - Refresh persisted state and generated wrappers so older `state.json` entries and child repos pick up the new `cron_minute` + wrapper contract on the next real controller run.
+- Resolve GitHub authentication so the controller can discover open issues and PRs for managed repositories.
 
 ## What `run` Does
 
