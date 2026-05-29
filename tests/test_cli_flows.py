@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from repo_autowork import cli
 from repo_autowork.config import build_config
-from repo_autowork.models import ProjectDispatchOutcome, ProjectRecord, State, TelegramSyncSummary
+from repo_autowork.models import ProjectDispatchOutcome, ProjectRecord, ProjectRunResult, State, TelegramSyncSummary
 
 
 class CliFlowTests(unittest.TestCase):
@@ -84,7 +84,7 @@ class CliFlowTests(unittest.TestCase):
                     self.assertEqual(passed_project.repo_path, str(repo_dir))
                     self.assertEqual(os.environ["AUTOWORK_PROJECT_SLUG"], "managed-repo")
                     self.assertEqual(os.environ["TG_TOPIC_ID"], "42")
-                    return cli.subprocess.CompletedProcess(args=[], returncode=0, stdout="prompt", stderr="")
+                    return ProjectRunResult(prompt="prompt", returncode=0, stdout="prompt", stderr="")
 
                 with patch("repo_autowork.cli.build_config", return_value=config), patch(
                     "repo_autowork.cli.load_state", return_value=state
@@ -131,7 +131,7 @@ class CliFlowTests(unittest.TestCase):
                 self.assertEqual(passed_project.repo_path, str(repo_dir))
                 self.assertEqual(os.environ["AUTOWORK_PROJECT_SLUG"], "managed-repo")
                 self.assertEqual(os.environ["TG_TOPIC_ID"], "42")
-                return cli.subprocess.CompletedProcess(args=[], returncode=0, stdout="prompt body", stderr="")
+                return ProjectRunResult(prompt="prompt body", returncode=0, stdout="prompt body", stderr="")
 
             with patch("repo_autowork.cli.build_config", return_value=config), patch(
                 "repo_autowork.cli.load_state", return_value=state
@@ -1825,6 +1825,105 @@ class CliFlowTests(unittest.TestCase):
             self.assertIn("wrapper_contracts", data)
             self.assertIn("per_project_healed", data["wrapper_contracts"])
             self.assertIn("alpha", data["wrapper_contracts"]["per_project_healed"])
+
+    def test_project_run_format_json_outputs_machine_readable_data(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "controller"
+            repo_dir = root.parent / "managed-repo"
+            root.mkdir(parents=True)
+            repo_dir.mkdir(parents=True)
+            (repo_dir / ".autowork").mkdir(parents=True)
+            (repo_dir / ".autowork" / "project.env").write_text(
+                "AUTOWORK_PROJECT_SLUG=managed-repo\nTG_TOPIC_ID=42\n",
+                encoding="utf-8",
+            )
+
+            config = build_config(root, repos_root=str(root.parent))
+            project = ProjectRecord(
+                slug="managed-repo",
+                name="managed-repo",
+                repo_path=str(repo_dir),
+                current_branch="main",
+                default_branch="main",
+                telegram_topic_id=42,
+                tg_folder=str(root / "tg" / "managed-repo"),
+            )
+            state = State(projects=[project])
+
+            fake_result = ProjectRunResult(
+                prompt="Automation round for repository `managed-repo`.",
+                returncode=0,
+                stdout="ok",
+                stderr="",
+            )
+
+            stdout = io.StringIO()
+            with patch("repo_autowork.cli.build_config", return_value=config), patch(
+                "repo_autowork.cli.load_state", return_value=state
+            ), patch("repo_autowork.cli.sync_projects"), patch(
+                "repo_autowork.cli.project_run_once", return_value=fake_result
+            ), patch("repo_autowork.cli.save_state"), patch(
+                "sys.argv", ["repo-autowork", "project-run", "--repo", str(repo_dir), "--repos-root", str(root.parent), "--dry-run", "--format", "json"]
+            ), patch("sys.stdout", stdout):
+                exit_code = cli.main()
+
+            self.assertEqual(exit_code, 0)
+            data = json.loads(stdout.getvalue())
+            self.assertEqual(data["project"]["slug"], "managed-repo")
+            self.assertEqual(data["project"]["name"], "managed-repo")
+            self.assertEqual(data["project"]["branch"], "main")
+            self.assertEqual(data["project"]["topic"], 42)
+            self.assertEqual(data["prompt"], "Automation round for repository `managed-repo`.")
+            self.assertTrue(data["dry_run"])
+            self.assertEqual(data["returncode"], 0)
+            self.assertEqual(data["stdout"], "ok")
+
+    def test_project_run_format_json_includes_error_on_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "controller"
+            repo_dir = root.parent / "managed-repo"
+            root.mkdir(parents=True)
+            repo_dir.mkdir(parents=True)
+            (repo_dir / ".autowork").mkdir(parents=True)
+            (repo_dir / ".autowork" / "project.env").write_text(
+                "AUTOWORK_PROJECT_SLUG=managed-repo\nTG_TOPIC_ID=42\n",
+                encoding="utf-8",
+            )
+
+            config = build_config(root, repos_root=str(root.parent))
+            project = ProjectRecord(
+                slug="managed-repo",
+                name="managed-repo",
+                repo_path=str(repo_dir),
+                current_branch="main",
+                default_branch="main",
+                telegram_topic_id=42,
+                tg_folder=str(root / "tg" / "managed-repo"),
+            )
+            state = State(projects=[project])
+
+            fake_result = ProjectRunResult(
+                prompt="Automation round for repository `managed-repo`.",
+                returncode=1,
+                stdout="",
+                stderr="command failed",
+            )
+
+            stdout = io.StringIO()
+            with patch("repo_autowork.cli.build_config", return_value=config), patch(
+                "repo_autowork.cli.load_state", return_value=state
+            ), patch("repo_autowork.cli.sync_projects"), patch(
+                "repo_autowork.cli.project_run_once", return_value=fake_result
+            ), patch("repo_autowork.cli.save_state"), patch(
+                "sys.argv", ["repo-autowork", "project-run", "--repo", str(repo_dir), "--repos-root", str(root.parent), "--format", "json"]
+            ), patch("sys.stdout", stdout):
+                exit_code = cli.main()
+
+            self.assertEqual(exit_code, 1)
+            data = json.loads(stdout.getvalue())
+            self.assertEqual(data["returncode"], 1)
+            self.assertEqual(data["stderr"], "command failed")
+            self.assertFalse(data["dry_run"])
 
 
 if __name__ == "__main__":

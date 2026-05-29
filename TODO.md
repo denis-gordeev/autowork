@@ -2,6 +2,11 @@
 
 ## Done
 
+- `project-run --format json` now outputs a machine-readable JSON payload with project metadata (slug, name, repo_path, branch, fork, topic), the generated prompt, dry-run flag, and dispatch result (returncode, stdout, stderr), matching the `review --json` and `run --format json` pattern for automated workflows.
+- `project_run_once` now returns a `ProjectRunResult` dataclass that carries the prompt alongside the dispatch result, so `project-run --format json` can expose the generated prompt without rebuilding it separately.
+- Regression coverage now guards `project-run --format json` for both successful and failed dispatches, verifying project metadata, prompt content, dry-run flag, and error details in the JSON payload.
+- Restored the live controller-root `autowork.sh` to the documented portfolio-wide `telegram-sync -> run -> review` flow.
+
 - Per-project granular healing is now available in `wrapper_contract_status` and all JSON output surfaces: `telegram-sync --self-heal --json`, `review --json`, `doctor --format json --self-heal`, and `run --format json --self-heal` now include `per_project_healed` and `per_project_drifted` mappings that associate each healed or drifted wrapper path with its project slug, resolving the remaining open TODO about per-project healing visibility.
 - `wrapper_contract_status` now accepts an optional `state` parameter so discovered repo directories can be resolved to their project slug for per-project healing/drift tracking.
 - Restored the live controller-root `autowork.sh` to the documented portfolio-wide `telegram-sync -> run -> review` flow.
@@ -74,4 +79,4 @@
 
 - Refresh `data/state.json` and generated child `autowork.sh` wrappers with a real controller run so live managed repos inherit the persisted cron minutes and current wrapper contract.
 - Consider adding a `--format json` alias to `telegram-sync --self-heal` that reports per-project wrapper healing details (now fully addressed: `--json --self-heal` includes `per_project_healed` in `wrapper_contracts`).
-- Consider adding a `project-run --format json` output that exposes the generated prompt and dispatch metadata in machine-readable form.
+- Consider adding `--self-heal` to `project-run` so wrapper drift can be fixed from the single-project surface as well.

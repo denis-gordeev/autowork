@@ -93,6 +93,14 @@ class TelegramSyncSummary:
 
 
 @dataclass
+class ProjectRunResult:
+    prompt: str = ""
+    returncode: int = 0
+    stdout: str = ""
+    stderr: str = ""
+
+
+@dataclass
 class State:
     created_at: str = field(default_factory=utc_now_iso)
     updated_at: str = field(default_factory=utc_now_iso)

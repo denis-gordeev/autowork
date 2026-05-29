@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .config import Config, project_runtime_env_path, read_json, write_json
 from .forge import detect_fork, list_open_work_items, merge_upstream, repo_snapshot
-from .models import ProjectRecord, ProjectDispatchOutcome, State, content_hash, utc_now_iso
+from .models import ProjectRecord, ProjectDispatchOutcome, ProjectRunResult, State, content_hash, utc_now_iso
 from .telegram import TelegramError, create_topic, send_message
 
 
@@ -597,7 +597,7 @@ def write_telegram_mirror(project: ProjectRecord, update: dict) -> Path:
     return inbox_dir / f"update-{update['update_id']}.json"
 
 
-def project_run_once(config: Config, project: ProjectRecord, dry_run: bool = False) -> subprocess.CompletedProcess:
+def project_run_once(config: Config, project: ProjectRecord, dry_run: bool = False) -> ProjectRunResult:
     repo_dir = Path(project.repo_path)
     upstream_note = "Upstream merge not needed."
     if project.is_fork and project.upstream_url and project.upstream_default_branch:
@@ -605,10 +605,11 @@ def project_run_once(config: Config, project: ProjectRecord, dry_run: bool = Fal
     work_items = list_open_work_items(repo_dir, project.forge_kind)
     prompt = project_prompt(project, repo_dir, work_items, upstream_note)
     if dry_run:
-        return subprocess.CompletedProcess(
-            args=shlex.split(config.autowork_base_command),
-            returncode=0,
-            stdout=prompt,
-            stderr="",
-        )
-    return run_base_command(config, repo_dir, prompt)
+        return ProjectRunResult(prompt=prompt, returncode=0, stdout=prompt, stderr="")
+    result = run_base_command(config, repo_dir, prompt)
+    return ProjectRunResult(
+        prompt=prompt,
+        returncode=result.returncode,
+        stdout=result.stdout or "",
+        stderr=result.stderr or "",
+    )

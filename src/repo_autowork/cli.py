@@ -26,7 +26,7 @@ from .manager import (
     sync_projects,
     write_telegram_mirror,
 )
-from .models import ProjectDispatchOutcome, TelegramSyncSummary, utc_now_iso
+from .models import ProjectDispatchOutcome, ProjectRunResult, TelegramSyncSummary, utc_now_iso
 from .telegram import TelegramError, get_updates, send_message
 
 
@@ -226,10 +226,29 @@ def cmd_project_run(args: argparse.Namespace) -> int:
     _load_project_env(project)
     result = project_run_once(config, project, dry_run=args.dry_run)
     save_state(config, state)
-    if result.stdout:
-        print(result.stdout.strip())
-    if result.stderr:
-        print(result.stderr.strip(), file=sys.stderr)
+    if getattr(args, "format", None) == "json":
+        run_data = {
+            "project": {
+                "slug": project.slug,
+                "name": project.name,
+                "repo_path": project.repo_path,
+                "branch": project.current_branch,
+                "default_branch": project.default_branch,
+                "fork": project.is_fork,
+                "topic": project.telegram_topic_id,
+            },
+            "prompt": result.prompt,
+            "dry_run": args.dry_run,
+            "returncode": result.returncode,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+        }
+        print(json.dumps(run_data, ensure_ascii=False, indent=2))
+    else:
+        if result.stdout:
+            print(result.stdout.strip())
+        if result.stderr:
+            print(result.stderr.strip(), file=sys.stderr)
     return result.returncode
 
 
@@ -544,6 +563,7 @@ def build_parser() -> argparse.ArgumentParser:
     project_parser.add_argument("--repo", required=True, help="Absolute or relative path to the repository.")
     project_parser.add_argument("--repos-root", default=None, help="Directory that contains managed repositories.")
     project_parser.add_argument("--dry-run", action="store_true", help="Print the generated prompt instead of executing the base command.")
+    project_parser.add_argument("--format", choices=["text", "json"], default="text", help="Output format (default: text).")
     project_parser.set_defaults(func=cmd_project_run)
 
     telegram_parser = sub.add_parser("telegram-sync", help="Pull Telegram topic messages and dispatch them to project chats.")

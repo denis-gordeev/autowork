@@ -63,6 +63,7 @@ PYTHONPATH=src python3 -m repo_autowork.cli run --self-heal
 PYTHONPATH=src python3 -m repo_autowork.cli review
 PYTHONPATH=src python3 -m repo_autowork.cli sync-crontab
 PYTHONPATH=src python3 -m repo_autowork.cli project-run --repo /Users/denis/programming/autowork/mcp-russia --dry-run
+PYTHONPATH=src python3 -m repo_autowork.cli project-run --repo /Users/denis/programming/autowork/mcp-russia --format json
 PYTHONPATH=src python3 -m repo_autowork.cli telegram-sync
 PYTHONPATH=src python3 -m repo_autowork.cli telegram-sync --self-heal
 PYTHONPATH=src python3 -m repo_autowork.cli history
@@ -139,11 +140,15 @@ pytest -q
 - `wrapper_contract_status` now accepts an optional `state` parameter so discovered repo directories can be resolved to their project slug for per-project healing/drift tracking.
 - Restored the live controller-root `autowork.sh` to the documented portfolio-wide `telegram-sync -> run -> review` flow.
 - Regression coverage now guards per-project healing mappings in `telegram-sync --self-heal --json`, `review --json`, `doctor --format json --self-heal`, and `run --format json --self-heal`.
+- `project-run --format json` outputs a machine-readable JSON payload with project metadata, the generated prompt, dry-run flag, and dispatch result, matching the `review --json` and `run --format json` pattern for automated workflows.
+- `project_run_once` now returns a `ProjectRunResult` dataclass carrying the prompt alongside the dispatch result, so JSON output can expose the generated prompt without rebuilding it separately.
+- Regression coverage guards `project-run --format json` for both successful and failed dispatches.
+- Restored the live controller-root `autowork.sh` to the documented portfolio-wide `telegram-sync -> run -> review` flow.
 
 ### Next Iterations
 
 - Refresh persisted state and generated wrappers so older `state.json` entries and child repos pick up the new `cron_minute` + wrapper contract on the next real controller run.
-- Consider adding a `project-run --format json` output that exposes the generated prompt and dispatch metadata in machine-readable form.
+- Consider adding `--self-heal` to `project-run` so wrapper drift can be fixed from the single-project surface as well.
 
 ## What `run` Does
 
