@@ -79,6 +79,7 @@ pytest -q
 
 ### Completed
 
+- Made `sync_projects(..., dry_run=True)` read-only on disk, so review-style dry runs skip wrapper generation, `.autowork/project.env` writes, root wrapper regeneration, and `state.json` persistence.
 - Surfaced wrapper-contract health directly in `review`, so unattended portfolio summaries now show whether the tracked controller wrapper or any managed child wrapper drifted from the generated contract without requiring a separate `doctor` run.
 - Added `AUTOWORK_INCLUDE_CONTROLLER` so the controller repo can opt into self-management explicitly instead of relying on implicit discovery.
 - Switched generated per-repo wrappers to call `project-run --repo <repo>` from the controller root, which prevents child repositories from accidentally re-running the full portfolio loop.
@@ -153,6 +154,7 @@ pytest -q
 
 ### Next Iterations
 
+- Extend the same read-only dry-run behavior to `project-run` and `telegram-sync` if we want every CLI surface to avoid disk writes in dry-run mode.
 - Refresh persisted state and generated wrappers so older `state.json` entries and child repos pick up the new `cron_minute` + wrapper contract on the next real controller run.
 - Resolve GitHub authentication so the controller can discover open issues and PRs for managed repositories.
 

@@ -2,6 +2,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from repo_autowork.config import (
     build_config,
@@ -199,10 +200,10 @@ class RuntimeConfigTests(unittest.TestCase):
                 os.environ["AUTOWORK_INCLUDE_CONTROLLER"] = "1"
                 config = build_config(root, repos_root=str(repos_root))
 
-                from repo_autowork.manager import load_state, save_state, sync_projects
+                from repo_autowork.manager import load_state, sync_projects
 
                 state = load_state(config)
-                sync_projects(config, state, dry_run=True)
+                sync_projects(config, state)
 
                 root_wrapper = (root / "autowork.sh").read_text(encoding="utf-8")
                 self.assertEqual(root_wrapper, render_root_autowork(config))
@@ -214,6 +215,31 @@ class RuntimeConfigTests(unittest.TestCase):
                     os.environ.pop("AUTOWORK_INCLUDE_CONTROLLER", None)
                 else:
                     os.environ["AUTOWORK_INCLUDE_CONTROLLER"] = original_include
+
+    def test_sync_projects_dry_run_skips_local_writes_and_state_persistence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "controller"
+            repos_root = Path(tmp_dir)
+            root.mkdir(parents=True)
+            repo_dir = repos_root / "alpha"
+            repo_dir.mkdir(parents=True)
+            (repo_dir / ".git").mkdir()
+
+            config = build_config(root, repos_root=str(repos_root))
+
+            from repo_autowork.manager import load_state, sync_projects
+
+            state = load_state(config)
+            state_path = config.state_path
+
+            with patch("repo_autowork.manager.save_state") as save_mock:
+                sync_projects(config, state, dry_run=True)
+
+            self.assertFalse((repo_dir / "autowork.sh").exists())
+            self.assertFalse((repo_dir / ".autowork" / "project.env").exists())
+            self.assertFalse((root / "autowork.sh").exists())
+            self.assertFalse(state_path.exists())
+            save_mock.assert_not_called()
 
 
 if __name__ == "__main__":

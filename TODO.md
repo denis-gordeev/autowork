@@ -2,6 +2,7 @@
 
 ## Done
 
+- `sync_projects(..., dry_run=True)` is now read-only on disk, so review-style dry runs skip wrapper generation, `.autowork/project.env` writes, root wrapper regeneration, and `state.json` persistence.
 - `project-run --format json` now outputs a machine-readable JSON payload with project metadata (slug, name, repo_path, branch, fork, topic), the generated prompt, dry-run flag, and dispatch result (returncode, stdout, stderr), matching the `review --json` and `run --format json` pattern for automated workflows.
 - `project_run_once` now returns a `ProjectRunResult` dataclass that carries the prompt alongside the dispatch result, so `project-run --format json` can expose the generated prompt without rebuilding it separately.
 - Regression coverage now guards `project-run --format json` for both successful and failed dispatches, verifying project metadata, prompt content, dry-run flag, and error details in the JSON payload.
@@ -88,6 +89,6 @@
 
 ## Next
 
+- Extend the same read-only dry-run behavior to `project-run` and `telegram-sync` if we want every CLI surface to avoid disk writes in dry-run mode.
 - Refresh `data/state.json` and generated child `autowork.sh` wrappers with a real controller run so live managed repos inherit the persisted cron minutes and current wrapper contract.
 - Resolve GitHub authentication (`gh auth login`) so the controller can discover open issues and PRs for managed repositories.
-- Consider adding `--dry-run` semantics to `sync_projects` that skip local file writes and state persistence, so `review --dry-run` has no side effects on disk.

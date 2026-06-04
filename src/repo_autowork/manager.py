@@ -337,12 +337,14 @@ def sync_projects(config: Config, state: State, dry_run: bool = False) -> list[P
         if project not in state.projects:
             state.projects.append(project)
         ensure_project_topic(config, project, dry_run=dry_run)
-        ensure_project_files(config, project)
+        if not dry_run:
+            ensure_project_files(config, project)
         retained.append(project)
     state.projects = retained
     assign_project_cron_minutes(state.projects)
-    ensure_root_wrapper(config)
-    save_state(config, state)
+    if not dry_run:
+        ensure_root_wrapper(config)
+        save_state(config, state)
     return retained
 
 
